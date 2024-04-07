@@ -12,6 +12,16 @@ visualizer = visualizer()
 def cal_entropy(p):
     return -1.0 * torch.sum(p * torch.log(p), dim = -1)
 
+class ViTScheduler():
+    def __init__():
+        pass
+    
+    def run_vit(self, images, layer_idx, head_idx, vit_input):
+        vit_input = self._preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+        attentions = vit(layer_idx, head_idx, vit_input, output_attentions=True)
+        qkv = vit.getqkv()
+
+
 class DDIMSchedulerWithViT(DDIMScheduler):
     # preprocessing output of diffusion to match dimension and statistics of ViT input
     def _preprocess_vit_input(self, images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
@@ -93,8 +103,8 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             '''
             print("one time step, getting attention map from Vit ")
             attentions = vit(layer_idx, head_idx, vit_input, output_attentions=True)
-            
-            allqkv = vit.getallqkv()
+
+            oneiterationqkv = vit.getqkv()
 
             attention_scores = attentions.attentions
             score_per_head = attention_scores[layer_idx][:, head_idx, 1:, 1:].squeeze()
@@ -176,7 +186,7 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             attention_mean = score_per_head.detach()
             entropy = mean_entropy,
             images = images.detach()
-            return (prev_sample, attention_mean, entropy, images, allqkv)
+            return (prev_sample, attention_mean, entropy, images, oneiterationqkv)
 
         return DDIMSchedulerOutput(prev_sample=prev_sample, pred_original_sample=pred_original_sample)
         

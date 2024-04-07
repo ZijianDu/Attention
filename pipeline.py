@@ -6,6 +6,12 @@ from diffusers import (
 )
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
+
+# pipeline for passing image into ViT 
+class ViTPipe():
+    def __init__(self):
+        pass
+        
 class StableDiffusionPipelineWithViT(StableDiffusionPipeline):
     def __init__(
         self,

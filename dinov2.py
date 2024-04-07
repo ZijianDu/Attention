@@ -197,17 +197,15 @@ class Dinov2ModelwOutput(Dinov2PreTrainedModel):
         self.post_init()
 
         # class member to store key, query and value for all iterations
-        self.all_key = []
-        self.all_query = []
-        self.all_value = []
+        self.key = None
+        self.query = None
+        self.value = None
         
-        # the token picked to form key/value/query/attention map to
-        # 0 is the CLS token
-        self.pickedtoken = 0
-        self.pickedlayer = 0
+        # pick certain channel of q, k, v
+        self.picked_channel = 0
 
-    def getallqkv(self):
-        return (self.all_query, self.all_key, self.all_value)
+    def getqkv(self):
+        return (self.query, self.key, self.value)
 
     def forward(self, layer_idx, head_idx,
         pixel_values: Optional[torch.Tensor] = None,
@@ -249,9 +247,10 @@ class Dinov2ModelwOutput(Dinov2PreTrainedModel):
             head_outputs = (sequence_output, pooled_output)
             return head_outputs + encoder_outputs[1:]
 
-        self.all_key.append(self.encoder.layer[layer_idx].attention.attention.key_layer[:, head_idx, self.pickedtoken, 1:])
-        self.all_value.append(self.encoder.layer[layer_idx].attention.attention.value_layer[:, head_idx, self.pickedtoken, 1:])
-        self.all_query.append(self.encoder.layer[layer_idx].attention.attention.query_layer[:, head_idx, self.pickedtoken, 1:])
+        ## set qkv for each iteration
+        self.key = self.encoder.layer[layer_idx].attention.attention.key_layer[:, head_idx, 1:, :]
+        self.query = self.encoder.layer[layer_idx].attention.attention.query_layer[:, head_idx, 1:, :]
+        self.value = self.encoder.layer[layer_idx].attention.attention.value_layer[:, head_idx, 1:, :]
 
         return BaseModelOutputWithPoolingwAttentionScores(
             last_hidden_state=sequence_output,
