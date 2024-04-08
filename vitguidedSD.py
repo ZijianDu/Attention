@@ -49,6 +49,8 @@ class configs:
         self.metricoutputdir = "./metrics"
         self.qkvoutputdir = "./qkv"
         self.trials = 1
+        self.num_pcs = 3
+        self.image_size = 224
         
 
 configs = configs()
@@ -97,13 +99,15 @@ def run_attention_guided_diffusion():
                             guidance_strength=strength,
                             return_dict=False)
                     image[0].save(configs.outputdir + "/" + foldername + "/" + "trial_" + str(counter+1) + f"_{strength}.png")
-                    entropy_numpy = [e[0].cpu().data.numpy() for e in entropy_per_timestep]
-                    visualizer.plot(entropy_numpy, configs.metricoutputdir + "/" + "entropy-layer_" + str(layer) + "_head_" + str(head) + "_trial_" + str(counter+1) + f"_{strength}.png")
-                    last_iter_key = torch.permute(allqkv[-1][1].squeeze(dim = 0), (1, 0))
-                    last_key_pca = processor.factor_analysis(last_iter_key, 3, "pca").mean(axis = 0).reshape((int(np.sqrt(configs.num_tokens)), int(np.sqrt(configs.num_tokens))))
-                    upsampled_last_key_pca = resize(last_key_pca, [224, 224])
-                    hm = HeatMap()
-                
+                    #entropy_numpy = [e[0].cpu().data.numpy() for e in entropy_per_timestep]
+                    #visualizer.plot(entropy_numpy, configs.metricoutputdir + "/" + "entropy-layer_" + str(layer) + "_head_" + str(head) + "_trial_" + str(counter+1) + f"_{strength}.png")
+                    last_iter_key = allqkv[-1][1].squeeze(dim = 0)
+                    processor.factor_analysis(last_iter_key, configs.num_pcs, configs.image_size, configs.qkvoutputdir, '/key_layer{0}_head{1}.png'.format(layer, head))
+                    #last_key_pca = processor.factor_analysis(last_iter_key, 3, "pca").mean(axis = 0).reshape((int(np.sqrt(configs.num_tokens)), int(np.sqrt(configs.num_tokens))))
+                    ##upsampled_last_key_pca = resize(last_key_pca, [224, 224])
+                    #print(upsampled_last_ket_pca)
                 #visualizer.plot_qkv(allqkv, iteration, configs.layer_idx, configs.head_idx)
                 ##visualizer.plot(attention_mean_per_timestep.cpu().data.numpy() , configs.metricoutputdir + "/" + "attention-layer_" + str(layer) + "_head_" + str(head) + "_trial_" + str(counter+1) + f"_{strength}.png")
 
+if __name__ == "__main__":
+    run_attention_guided_diffusion()

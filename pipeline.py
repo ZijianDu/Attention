@@ -9,9 +9,18 @@ from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusion
 
 # pipeline for passing image into ViT 
 class ViTPipe():
-    def __init__(self):
-        pass
-        
+    # define structural components needed for ViT
+    def __init__(self, vit, scheduler, torch_device):
+        self.vit = vit.to(torch_device)
+        self.scheduler = scheduler
+    
+    # define variables/parameters needed to run the pipeline
+    def __call__(self, image, vit_input_size, vit_input_mean, vit_input_std, layer_idx, head_idx):
+        qkv = self.scheduler.step(self.vit, image, vit_input_size,
+                vit_input_mean, vit_input_std, layer_idx, head_idx)
+
+        return qkv
+
 class StableDiffusionPipelineWithViT(StableDiffusionPipeline):
     def __init__(
         self,

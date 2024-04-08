@@ -12,25 +12,27 @@ visualizer = visualizer()
 def cal_entropy(p):
     return -1.0 * torch.sum(p * torch.log(p), dim = -1)
 
+# preprocessing output of diffusion to match dimension and statistics of ViT input
+def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
+    # step 1: resize
+    images = F.interpolate(images, size=size, mode="bilinear", align_corners=False, antialias=True)
+    # step 2: normalize
+    images = (images - mean.reshape(-1, 1, 1)) / std.reshape(-1, 1, 1)
+    return images
+
 class ViTScheduler():
-    def __init__():
-        pass
-    
-    def run_vit(self, images, layer_idx, head_idx, vit_input):
-        vit_input = self._preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-        attentions = vit(layer_idx, head_idx, vit_input, output_attentions=True)
+    def step(self, vit, images, vit_input_size, vit_input_mean, vit_input_std, layer_idx, head_idx):
+        print("send image into Vit preprocessor, image shape: ", images.shape)
+        vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+        print("image after preprocessing, image shape: ", vit_input.shape)
+        vit(layer_idx, head_idx, vit_input, output_attentions=True)
+        print("passed through ViT")
         qkv = vit.getqkv()
+        print("returning qkv")
+        return qkv
 
 
 class DDIMSchedulerWithViT(DDIMScheduler):
-    # preprocessing output of diffusion to match dimension and statistics of ViT input
-    def _preprocess_vit_input(self, images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
-        # step 1: resize
-        images = F.interpolate(images, size=size, mode="bilinear", align_corners=False, antialias=True)
-        # step 2: normalize
-        images = (images - mean.reshape(-1, 1, 1)) / std.reshape(-1, 1, 1)
-        return images
-
     def step(
         self,
         vit,
@@ -90,8 +92,8 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
             # obtain image input to ViT
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
-            
-            vit_input = self._preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+            # images: Batchsize x 3 x 512 x 512
+            vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
             '''
             ## return of modified DinoV2
             class BaseModelOutputWithPoolingwAttentionScores:
