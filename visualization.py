@@ -36,7 +36,7 @@ class visualizer():
 
 
 class HeatMap:
-    def __init__(self,image,heat_map,gaussian_std=10):
+    def __init__(self, image, heat_map, gaussian_std=10):
         #if image is numpy array
         if isinstance(image,np.ndarray):
             height = image.shape[0]
@@ -52,13 +52,7 @@ class HeatMap:
         #Rezie the heat_map to the size of the input image
         #Apply the gausian filter for smoothing
         #Convert back to numpy
-        heatmap_image = Image.fromarray(heat_map*255)
-        heatmap_image_resized = heatmap_image.resize((width,height))
-        heatmap_image_resized = ndimage.gaussian_filter(heatmap_image_resized, 
-                                                        sigma=(gaussian_std, gaussian_std), 
-                                                        order=0)
-        heatmap_image_resized = np.asarray(heatmap_image_resized)
-        self.heat_map = heatmap_image_resized
+        self.heat_map = heat_map
     
     #Plot the figure
     def plot(self,transparency=0.7,color_map='bwr',
@@ -67,17 +61,10 @@ class HeatMap:
         #If show_original is True, then subplot first figure as orginal image
         #Set x,y to let the heatmap plot in the second subfigure, 
         #otherwise heatmap will plot in the first sub figure
-        if show_original:
-            plt.subplot(1, 2, 1)
-            if not show_axis:
-                plt.axis('off')
-            plt.imshow(self.image)
-            x,y=2,2
-        else:
-            x,y=1,1
+    
         
         #Plot the heatmap
-        plt.subplot(1,x,y)
+        plt.subplot(1, 1, 1)
         if not show_axis:
             plt.axis('off')
         plt.imshow(self.image)
@@ -88,29 +75,18 @@ class HeatMap:
         plt.show()
     
     ###Save the figure
-    def save(self,filename,format='png',save_path=os.getcwd(),
-             transparency=0.7,color_map='bwr',width_pad = -10,
-             show_axis=False, show_original=False, show_colorbar=False, **kwargs):
-        if show_original:
-            plt.subplot(1, 2, 1)
-            if not show_axis:
-                plt.axis('off')
-            plt.imshow(self.image)
-            x,y=2,2
-        else:
-            x,y=1,1
+    def save(self, filename ,save_path = None,
+             transparency=0.6,color_map='viridis',width_pad = -10,
+             show_axis=True, show_colorbar=True, **kwargs):
         
-        #Plot the heatmap
-        plt.subplot(1,x,y)
         if not show_axis:
             plt.axis('off')
+        plt.subplot(1, 1, 1)
         plt.imshow(self.image)
-        plt.imshow(self.heat_map/255, alpha=transparency, cmap=color_map)
-        if show_colorbar:
-            plt.colorbar()
-        plt.tight_layout(w_pad=width_pad)
-        plt.savefig(os.path.join(save_path,filename+'.'+format), 
-                    format=format, 
+        plt.imshow(self.heat_map, alpha=transparency, cmap=color_map)
+        plt.colorbar()
+
+        print("filename before saving figure: ", save_path + filename)
+        plt.savefig(save_path+filename, 
                     bbox_inches='tight',
-                    pad_inches = 0, **kwargs)
-        print('{}.{} has been successfully saved to {}'.format(filename,format,save_path))
+                    pad_inches = 0)
