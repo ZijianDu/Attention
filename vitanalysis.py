@@ -21,14 +21,11 @@ from torchvision.transforms import Resize
 class configs:
     def __init__(self):
         self.model_path = 'facebook/dinov2-large'
-        #self.link = "runwayml/stable-diffusion-v1-5"
-        #self.tokenizer = AutoTokenizer.from_pretrained(self.link, subfolder="tokenizer")
-        self.processor = AutoImageProcessor.from_pretrained(self.model_path)
-        self.size = [self.processor.crop_size["height"], self.processor.crop_size["width"]]
-        self.mean, self.std = self.processor.image_mean, self.processor.image_std
+        self.improcessor = AutoImageProcessor.from_pretrained(self.model_path)
+        self.size = [self.improcessor.crop_size["height"], self.improcessor.crop_size["width"]]
+        self.mean, self.std = self.improcessor.image_mean, self.improcessor.image_std
         self.mean = torch.tensor(self.mean, device="cuda")
         self.std = torch.tensor(self.std, device="cuda")
-        self.seed = 20
         self.vit = Dinov2ModelwOutput.from_pretrained(self.model_path)
         self.scheduler = ViTScheduler()
         self.imageH = 224
@@ -36,22 +33,21 @@ class configs:
         self.outputdir = "./outputs" 
         self.metricoutputdir = "./metrics"
         self.outputdir = ["./qkv/q/", "./qkv/k/", "./qkv/v/"]
-        self.class_label = 2
+        self.class_label = 0
         # total 16 heads
         self.head_idx = [i for i in range(16)]
         # total 24 layers
-        self.layer_idx = [0]
+        self.layer_idx = [23]
         # choose which feature to look, q: 0 k: 1 v: 2
-        self.qkv_choice = 2
-        self.inputdatadir = "/media/data/leo/imagenet_images/"
+        self.qkv_choice = 1
+        self.inputdatadir = "/media/data/leo/style_vector_data/"
         self.all_classes_list = os.listdir(self.inputdatadir)
         self.all_images_list = os.listdir(self.inputdatadir + self.all_classes_list[self.class_label])
         self.num_classes = len(self.all_classes_list)
         assert self.class_label < self.num_classes
         self.num_images_in_picked_class = len(os.listdir(self.inputdatadir + self.all_classes_list[self.class_label]))
-        self.inputimagedir = "./media/"
         random_list = []
-        self.seed = 1
+        self.seed = 4
         self.num_patches = 16
         self.attention_channels = 64
         self.batch_size = 1
@@ -60,7 +56,7 @@ class configs:
         self.all_image_sizes = []
         np.random.seed(self.seed)
         while len(random_list) < self.batch_size:
-            randnum = np.random.randint(0, 50)
+            randnum = np.random.randint(0, len(self.all_images_list))
             if randnum not in random_list:
                 random_list.append(randnum)
         self.picked_images_index = random_list
@@ -79,46 +75,50 @@ configs.get_original_image_shapes()
 print(configs.all_image_sizes)
 visualizer = visualizer()
 processor = processor()
-resizer = Resize(size = (configs.imageH, configs.imageW), antialias = True)
-transform = transforms.Compose([transforms.PILToTensor()])
 
 # define pipe with components fixed
-pipe = ViTPipe(vit = configs.vit, scheduler = configs.scheduler, torch_device = 'cuda')
 
-def extract_ViT_features(configs, processor, visualizer):
-    data = torch.empty(configs.batch_size, 3, configs.imageH, configs.imageW).cuda()
-    original_images = []
-    all_image_name = []
-    # firstly, read all images in original size and resized to send to vit
-    for idx in range(len(configs.picked_images_index)):
-        img_idx = configs.picked_images_index[idx]
-        image_file_path = configs.inputdatadir + configs.all_classes_list[configs.class_label] + "/" + configs.all_images_list[img_idx]
-        all_image_name.append(configs.all_images_list[img_idx])
-        im = Image.open(image_file_path)
-        original_images.append(np.array(im))
-        image = transform(im)
-        # resize image of random size into 224x224 as vit input
-        image_resized = resizer(image)
-        data[idx] = image_resized
-    print("finished reading all images and resize ")
-    print("all image names: ", all_image_name)
-    print("all resized images: ", data.shape)
-    
-    for layer in configs.layer_idx:
-        for head in configs.head_idx:
-            # batch of qkv for each layer/head index, differnt for each layer/head combination
-            allfeatures = torch.empty(configs.batch_size, configs.num_patches * configs.num_patches, configs.attention_channels)
-            # send batch of images into vit pipe and get qkv
-            qkv = pipe(data, vit_input_size = configs.size, vit_input_mean = configs.mean, vit_input_std = configs.std, 
-            layer_idx = layer, head_idx = head)
-            # all keys: 256*Num_images, channels
-            allfeatures = qkv[configs.qkv_choice].reshape(configs.batch_size * configs.num_patches * configs.num_patches, configs.attention_channels)
-            filenames = []
-            for fileidx in range(configs.batch_size):
-                filenames.append("layer_{}_head_{}_class_{}_{}".format(layer, head, configs.all_classes_list[configs.class_label], all_image_name[fileidx]))
-            print("shape of all features", allfeatures.shape)
-            print("all filenames to be saved", filenames)
-            processor.factor_analysis(allfeatures, original_images, configs.num_patches, configs.num_pcs, configs.all_image_sizes, configs.outputdir[configs.qkv_choice], filenames)
-            del allfeatures
+class ViTFeature:
+    def __init__(self, configs, processor, visualizer):
+        self.configs = configs
+        self.processor = processor
+        self.visualizer = visualizer
+        self.pipe = ViTPipe(vit = self.configs.vit, scheduler = self.configs.scheduler, torch_device = 'cuda')
+        self.data = torch.empty(configs.batch_size, 3, configs.imageH, configs.imageW).cuda()
+        self.original_images = []
+        self.all_image_name = []
 
-extract_ViT_features(configs, processor, visualizer)
+    def read_all_images(self):
+        for idx in range(len(self.configs.picked_images_index)):
+            img_idx = self.configs.picked_images_index[idx]
+            image_file_path = self.configs.inputdatadir + self.configs.all_classes_list[self.configs.class_label] + "/" + self.configs.all_images_list[img_idx]
+            self.all_image_name.append(self.configs.all_images_list[img_idx])
+            im = Image.open(image_file_path)
+            self.original_images.append(np.array(im))
+            image = configs.improcessor(im)["pixel_values"][0]
+            self.data[idx] = torch.tensor(image)
+        print("finished reading all images and resize ")
+        print("all image names: ", self.all_image_name)
+        print("all resized images: ", self.data.shape)
+
+    def extract_ViT_features(self):        
+        for layer in self.configs.layer_idx:
+            for head in self.configs.head_idx:
+                # batch of qkv for each layer/head index, differnt for each layer/head combination
+                allfeatures = torch.empty(self.configs.batch_size, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels)
+                # send batch of images into vit pipe and get qkv
+                qkv = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = layer, head_idx = head)
+                # all keys: 256*Num_images, channels
+                allfeatures = qkv[self.configs.qkv_choice].reshape(self.configs.batch_size * self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels)
+                filenames = []
+                for fileidx in range(self.configs.batch_size):
+                    filenames.append("layer_{}_head_{}_class_{}_{}".format(layer, head, self.configs.all_classes_list[self.configs.class_label], self.all_image_name[fileidx]))
+                print("shape of all features", allfeatures.shape)
+                print("all filenames to be saved", filenames)
+                self.processor.factor_analysis(allfeatures, self.original_images, self.configs.num_patches, self.configs.num_pcs, self.configs.all_image_sizes, self.configs.outputdir[configs.qkv_choice], filenames)
+                del allfeatures
+
+
+vitfeature = ViTFeature(configs, processor, visualizer)
+vitfeature.read_all_images()
+vitfeature.extract_ViT_features()

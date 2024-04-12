@@ -12,20 +12,11 @@ visualizer = visualizer()
 def cal_entropy(p):
     return -1.0 * torch.sum(p * torch.log(p), dim = -1)
 
-# preprocessing output of diffusion to match dimension and statistics of ViT input
-def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
-    # step 1: resize
-    images = F.interpolate(images, size=size, mode="bilinear", align_corners=False, antialias=True)
-    # step 2: normalize
-    images = (images - mean.reshape(-1, 1, 1)) / std.reshape(-1, 1, 1)
-    return images
 
 class ViTScheduler():
-    def step(self, vit, images, vit_input_size, vit_input_mean, vit_input_std, layer_idx, head_idx):
-        print("send image into Vit preprocessor, image shape: ", images.shape)
-        vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-        print("image after preprocessing, image shape: ", vit_input.shape)
-        vit(layer_idx, head_idx, vit_input, output_attentions=True)
+    def step(self, vit, images, vit_input_size, layer_idx, head_idx):
+        print("layer idx %s, head idx %s", layer_idx, head_idx)
+        vit(layer_idx, head_idx, images, output_attentions=True)
         print("passed through ViT")
         qkv = vit.getqkv()
         print("returning qkv")

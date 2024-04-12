@@ -75,7 +75,7 @@ class HeatMap:
         plt.show()
     
     ###Save the figure
-    def save(self, filename ,save_path = None,
+    def save(self, filename, save_path = None,
              transparency=0.6,color_map='viridis',width_pad = -10,
              show_axis=True, show_colorbar=True, **kwargs):
         
@@ -83,10 +83,8 @@ class HeatMap:
             plt.axis('off')
         plt.subplot(1, 1, 1)
         plt.imshow(self.image)
-        plt.imshow(self.heat_map, alpha=transparency, cmap=color_map)
+        plt.imshow(self.heat_map/255.0, alpha=transparency, cmap=color_map)
         plt.colorbar()
 
         print("filename before saving figure: ", save_path + filename)
-        plt.savefig(save_path+filename, 
-                    bbox_inches='tight',
-                    pad_inches = 0)
+        plt.savefig(save_path+filename, pad_inches = 0.5)

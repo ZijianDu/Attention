@@ -15,9 +15,8 @@ class ViTPipe():
         self.scheduler = scheduler
     
     # define variables/parameters needed to run the pipeline
-    def __call__(self, image, vit_input_size, vit_input_mean, vit_input_std, layer_idx, head_idx):
-        qkv = self.scheduler.step(self.vit, image, vit_input_size,
-                vit_input_mean, vit_input_std, layer_idx, head_idx)
+    def __call__(self, image, vit_input_size, layer_idx, head_idx):
+        qkv = self.scheduler.step(self.vit, image, vit_input_size, layer_idx, head_idx)
 
         return qkv
 
