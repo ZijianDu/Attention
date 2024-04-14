@@ -9,7 +9,7 @@ import scipy.ndimage as ndimage
 
 class visualizer():
     def __init__(self):
-        self.figsize = (10, 10)
+        self.figsize = (15, 15)
         self.dpi = 200
 
 

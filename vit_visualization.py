@@ -7,14 +7,14 @@ import requests
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from visualization import visualizer
+from Attention.visualizer import visualizer
 from scheduler import ViTScheduler
 import shutil
 from processor import processor
 from scheduler import ViTScheduler
 from pipeline import ViTPipe
 from skimage.transform import resize
-from visualization import HeatMap
+from Attention.visualizer import HeatMap
 import torchvision.transforms as transforms 
 from torchvision.transforms import Resize
 
@@ -33,13 +33,13 @@ class configs:
         self.outputdir = "./outputs" 
         self.metricoutputdir = "./metrics"
         self.outputdir = ["./qkv/q/", "./qkv/k/", "./qkv/v/"]
-        self.class_label = 0
+        self.class_label = 2
         # total 16 heads
         self.head_idx = [i for i in range(16)]
         # total 24 layers
         self.layer_idx = [23]
         # choose which feature to look, q: 0 k: 1 v: 2
-        self.qkv_choice = 1
+        self.qkv_choice = 2
         self.inputdatadir = "/media/data/leo/style_vector_data/"
         self.all_classes_list = os.listdir(self.inputdatadir)
         self.all_images_list = os.listdir(self.inputdatadir + self.all_classes_list[self.class_label])
@@ -47,7 +47,7 @@ class configs:
         assert self.class_label < self.num_classes
         self.num_images_in_picked_class = len(os.listdir(self.inputdatadir + self.all_classes_list[self.class_label]))
         random_list = []
-        self.seed = 4
+        self.seed = 10
         self.num_patches = 16
         self.attention_channels = 64
         self.batch_size = 1
@@ -77,7 +77,6 @@ visualizer = visualizer()
 processor = processor()
 
 # define pipe with components fixed
-
 class ViTFeature:
     def __init__(self, configs, processor, visualizer):
         self.configs = configs

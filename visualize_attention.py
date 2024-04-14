@@ -2,7 +2,7 @@ from diffusers import DDIMScheduler
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from visualization import visualizer
+from Attention.visualizer import visualizer
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 from torch.distributions import Categorical
@@ -22,11 +22,11 @@ import os
 import requests
 from diffusers import DDIMPipeline
 import torch
-from visualization import visualizer
+from Attention.visualizer import visualizer
 from transformers.models.clip import CLIPTextModel
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from visualization import visualizer
+from Attention.visualizer import visualizer
 import shutil
 import unittest
 

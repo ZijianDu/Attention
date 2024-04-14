@@ -1,8 +1,8 @@
-from diffusers import DDIMScheduler
+from diffusers import DDIMScheduler, DDPMScheduler
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from visualization import visualizer
+from Attention.visualizer import visualizer
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 from torch.distributions import Categorical
@@ -12,7 +12,6 @@ visualizer = visualizer()
 def cal_entropy(p):
     return -1.0 * torch.sum(p * torch.log(p), dim = -1)
 
-
 class ViTScheduler():
     def step(self, vit, images, vit_input_size, layer_idx, head_idx):
         print("layer idx %s, head idx %s", layer_idx, head_idx)
@@ -21,7 +20,6 @@ class ViTScheduler():
         qkv = vit.getqkv()
         print("returning qkv")
         return qkv
-
 
 class DDIMSchedulerWithViT(DDIMScheduler):
     def step(
