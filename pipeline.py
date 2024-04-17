@@ -1,21 +1,32 @@
 import torch
 import numpy as np
-import torchvision.utility as tvu
+#import torchvision.utility as tvu
 from PIL import Image
 import tqdm
-from diffusers.image_processor import PipelineImageInput
 from typing import Dict, List, Optional, Tuple, Union, Any, Callable
-from diffusers import (
-    StableDiffusionPipeline
-)
-from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
-from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
-
+import inspect
+from packaging import version
 import requests
-from io import BytesIO
-from diffusers import StableDiffusionImg2ImgPipeline
 import os
 
+
+from diffusers import (StableDiffusionPipeline, StableDiffusionImg2ImgPipeline)
+
+from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
+from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
+from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
+from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
+from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
+from diffusers.utils.torch_utils import randn_tensor
+from diffusers.utils import (
+    PIL_INTERPOLATION,
+    USE_PEFT_BACKEND,
+    deprecate,
+    logging,
+    replace_example_docstring,
+    scale_lora_layers,
+    unscale_lora_layers,
+)
 
 # pipeline for passing image into ViT 
 class ViTPipe():
@@ -29,35 +40,36 @@ class ViTPipe():
         qkv = self.scheduler.step(self.vit, image, vit_input_size, layer_idx, head_idx)
         return qkv
 
-def StableDiffusionPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
-    def __init__(self, pipe, scheduler, torch_device):
-        pass
+class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
+    def __init__(
+        self,
+        vae,
+        text_encoder,
+        tokenizer,
+        unet,
+        scheduler,
+        safety_checker,
+        feature_extractor,
+        image_encoder,
+        requires_safety_checker
+        ):
+        super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, image_encoder, requires_safety_checker)
 
     # create noisy images according to predefined noise schedule
-    def create_noisy_images(self, configs):
-        # read noiseless image
-        n = configs.batch_size
-        image = Image.read(configs.image_path)
-        img = image.to(configs.device)
-        img = image.unsqueeze(dim = 0)
-        img = img.repeat(n, 1, 1, 1)
-        x0 = img
-        x0 = (x0 - 0.5)*2.
-        for it in range(configs.sample_step):
-            e = torch.randn_like(x0)
-            total_noise_levels = configs.t
-            a = (1-self.betas).cumprod(dim = 0)
-            x = x0 * a[total_noise_levels-1].sqrt() + e*(1.0 - a[total_noise_levels-1]).sqrt()
-            tvu.save_image((x+1.0)*0.5, configs.noised_images_folder, filename)
-            # now we denoise the randomly noised images
-            with tqdm(total = total_noise_levels, desc ="Iteration {}".format(it)) as progress_bar:
-                for i in reversed(range(configs.total_noise_levels)):
-                    t = (torch.ones(n) * i).to(configs.device)
-
-
+    def create_noisy_image(self, clean_image, timestep):
+        noise = torch.randn(clean_image.shape).cuda()
+        timestep = torch.LongTensor([timestep])
+        noisy_image = self.scheduler.add_noise(clean_image, noise, timestep)
+        print(noisy_image.shape)
+        normed_image = ((noisy_image + 1.0) * 127.5).type(torch.uint8).cpu().numpy()
+        print(normed_image.shape)
+        print("normed image", normed_image)
+        PILImage = Image.fromarray(normed_image)
+        PILImage.save("noisyimage.png")
+        return normed_image
 
     # modified call function to take noisy images and run denoising
-    @replace_example_docstring(EXAMPLE_DOC_STRING)
+
     def __call__(
         self,
         prompt: Union[str, List[str]] = None,
@@ -345,8 +357,9 @@ def StableDiffusionPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
             return (image, has_nsfw_concept)
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+    
 
-
+'''
 class StableDiffusionPipelineWithViT(StableDiffusionPipeline):
     def __init__(
         self,
@@ -684,3 +697,4 @@ class StableDiffusionPipelineWithViT(StableDiffusionPipeline):
             return (image, has_nsfw_concept, attention_mean_per_timestep, entropy_per_timestep, images_per_timestep, allqkv)
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
+'''

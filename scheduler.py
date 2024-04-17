@@ -2,7 +2,7 @@ from diffusers import DDIMScheduler, DDPMScheduler
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from Attention.visualizer import visualizer
+from visualizer import visualizer
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 from torch.distributions import Categorical
@@ -20,6 +20,35 @@ class ViTScheduler():
         qkv = vit.getqkv()
         print("returning qkv")
         return qkv
+
+
+class myddpmscheduler(DDPMScheduler):
+    def add_noise(
+        self,
+        original_samples: torch.FloatTensor,
+        noise: torch.FloatTensor,
+        timesteps: torch.IntTensor):
+        # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
+        # Move the self.alphas_cumprod to device to avoid redundant CPU to GPU data movement
+        # for the subsequent add_noise calls
+        self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device)
+        print("alpha cumprod: ", self.alphas_cumprod)
+        alphas_cumprod = self.alphas_cumprod.to(dtype=original_samples.dtype)
+        timesteps = timesteps.to(original_samples.device)
+        print("timesteps: ", timesteps)
+
+        sqrt_alpha_prod = alphas_cumprod[timesteps] ** 0.5
+        sqrt_alpha_prod = sqrt_alpha_prod.flatten()
+        while len(sqrt_alpha_prod.shape) < len(original_samples.shape):
+            sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+
+        sqrt_one_minus_alpha_prod = (1 - alphas_cumprod[timesteps]) ** 0.5
+        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
+        while len(sqrt_one_minus_alpha_prod.shape) < len(original_samples.shape):
+            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+
+        noisy_samples = sqrt_alpha_prod * original_samples + sqrt_one_minus_alpha_prod * noise
+        return noisy_samples
 
 class DDIMSchedulerWithViT(DDIMScheduler):
     def step(

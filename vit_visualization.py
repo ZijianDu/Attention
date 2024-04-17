@@ -17,6 +17,7 @@ from skimage.transform import resize
 from Attention.visualizer import HeatMap
 import torchvision.transforms as transforms 
 from torchvision.transforms import Resize
+from dataclasses import dataclass
 
 class configs:
     def __init__(self):

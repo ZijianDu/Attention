@@ -21,36 +21,36 @@ from scheduler import DDIMSchedulerWithViT
 from pipeline import StableDiffusionPipelineWithViT
 from skimage.transform import resize
 from visualization import HeatMap
-
+from dataclasses import dataclass
+@dataclass
 class configs:
-    def __init__(self):
-        self.model_path = 'facebook/dinov2-large'
-        self.link = "runwayml/stable-diffusion-v1-5"
-        self.tokenizer = AutoTokenizer.from_pretrained(self.link, subfolder="tokenizer")
-        self.processor = AutoImageProcessor.from_pretrained(self.model_path)
-        self.size = [self.processor.crop_size["height"], self.processor.crop_size["width"]]
-        self.mean, self.std = self.processor.image_mean, self.processor.image_std
-        self.mean = torch.tensor(self.mean, device="cuda")
-        self.std = torch.tensor(self.std, device="cuda")
-        self.prompt = "a high-quality image"
-        self.seed = 20
-        self.num_inference_steps = 5
-        self.vit = Dinov2ModelwOutput.from_pretrained(self.model_path)
-        self.vae = AutoencoderKL.from_pretrained(self.link, subfolder="vae")
-        self.text_encoder = CLIPTextModel.from_pretrained(self.link, subfolder="text_encoder")
-        self.unet = UNet2DConditionModel.from_pretrained(self.link, subfolder="unet")
-        self.scheduler = DDIMSchedulerWithViT.from_pretrained(self.link, subfolder="scheduler")
-        self.layeridx = [0]
-        self.head = [0]
-        self.guidance_strength = [0.0]
-        self.guidance_range = [0, 150]
-        self.num_tokens = 256
-        self.outputdir = "./outputs" 
-        self.metricoutputdir = "./metrics"
-        self.qkvoutputdir = "./qkv"
-        self.trials = 1
-        self.num_pcs = 3
-        self.image_size = 224
+    model_path = 'facebook/dinov2-large'
+    link = "runwayml/stable-diffusion-v1-5"
+    tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer")
+    processor = AutoImageProcessor.from_pretrained(model_path)
+    size = [processor.crop_size["height"], processor.crop_size["width"]]
+    mean, std = processor.image_mean, processor.image_std
+    mean = torch.tensor(mean, device="cuda")
+    std = torch.tensor(std, device="cuda")
+    prompt = "a high-quality image"
+    seed = 20
+    num_inference_steps = 5
+    vit = Dinov2ModelwOutput.from_pretrained(model_path)
+    vae = AutoencoderKL.from_pretrained(link, subfolder="vae")
+    text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
+    unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet")
+    scheduler = DDIMSchedulerWithViT.from_pretrained(link, subfolder="scheduler")
+    layeridx = [0]
+    head = [0]
+    guidance_strength = [0.0]
+    guidance_range = [0, 150]
+    num_tokens = 256
+    outputdir = "./outputs" 
+    metricoutputdir = "./metrics"
+    qkvoutputdir = "./qkv"
+    trials = 1
+    num_pcs = 3
+    image_size = 224
         
 
 configs = configs()
