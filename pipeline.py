@@ -9,7 +9,6 @@ from packaging import version
 import requests
 import os
 
-
 from diffusers import (StableDiffusionPipeline, StableDiffusionImg2ImgPipeline)
 
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
@@ -54,19 +53,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         requires_safety_checker
         ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, image_encoder, requires_safety_checker)
-
-    # create noisy images according to predefined noise schedule
-    def create_noisy_image(self, clean_image, timestep):
-        noise = torch.randn(clean_image.shape).cuda()
-        timestep = torch.LongTensor([timestep])
-        noisy_image = self.scheduler.add_noise(clean_image, noise, timestep)
-        print(noisy_image.shape)
-        normed_image = ((noisy_image + 1.0) * 127.5).type(torch.uint8).cpu().numpy()
-        print(normed_image.shape)
-        print("normed image", normed_image)
-        PILImage = Image.fromarray(normed_image)
-        PILImage.save("noisyimage.png")
-        return normed_image
 
     # modified call function to take noisy images and run denoising
 
@@ -141,10 +127,10 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                 not provided, `negative_prompt_embeds` are generated from the `negative_prompt` input argument.
             ip_adapter_image: (`PipelineImageInput`, *optional*): Optional image input to work with IP Adapters.
             ip_adapter_image_embeds (`List[torch.FloatTensor]`, *optional*):
-                Pre-generated image embeddings for IP-Adapter. It should be a list of length same as number of IP-adapters.
-                Each element should be a tensor of shape `(batch_size, num_images, emb_dim)`. It should contain the negative image embedding
-                if `do_classifier_free_guidance` is set to `True`.
-                If not provided, embeddings are computed from the `ip_adapter_image` input argument.
+                Pre-generated image embeddings for IP-Adapter. It should be a list of length same as number of
+                IP-adapters. Each element should be a tensor of shape `(batch_size, num_images, emb_dim)`. It should
+                contain the negative image embedding if `do_classifier_free_guidance` is set to `True`. If not
+                provided, embeddings are computed from the `ip_adapter_image` input argument.
             output_type (`str`, *optional*, defaults to `"pil"`):
                 The output format of the generated image. Choose between `PIL.Image` or `np.array`.
             return_dict (`bool`, *optional*, defaults to `True`):
@@ -357,7 +343,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
             return (image, has_nsfw_concept)
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
-    
 
 '''
 class StableDiffusionPipelineWithViT(StableDiffusionPipeline):

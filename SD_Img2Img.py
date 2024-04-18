@@ -36,6 +36,11 @@ from diffusers.utils import (
     unscale_lora_layers,
 )
 
+from torchvision import transforms
+from torchvision.utils import save_image
+
+
+
 @dataclass
 class configs:
     model_path = 'facebook/dinov2-large'
@@ -56,8 +61,8 @@ class configs:
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae")
     text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet")
-    #scheduler = DDPMScheduler.from_pretrained(link, subfolder="scheduler")
-    scheduler = myddpmscheduler.from_pretrained(link, subfolder = "scheduler")
+    scheduler = DDPMScheduler.from_pretrained(link, subfolder="scheduler")
+    #scheduler = myddpmscheduler.from_pretrained(link, subfolder = "scheduler")
     layeridx = [0]
     head = [0]
     guidance_strength = [0.0]
@@ -66,24 +71,42 @@ class configs:
     trials = 1
     num_pcs = 3
     image_size = 224
+    timestep = 50
         
 
 
 configs = configs()
-pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vae=configs.vae, text_encoder=configs.text_encoder, 
+
+
+preprocess = transforms.Compose(
+    [
+        transforms.ToTensor(),
+        transforms.Resize((configs.image_size, configs.image_size)),
+        transforms.Normalize([0.5], [0.5]),
+    ]
+)
+
+
+# make sure input image is float and in the range of 0 and 1
+sample_image = torch.tensor(np.array(Image.open("church.jpg"))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
+#sample_image = preprocess(Image.open("church.jpg"))
+
+prompt = "a high quality image"
+strengths = [0.1, 0.2, 0.5, 0.7, 0.9, 1]
+steps = [50, 200, 500, 700, 1000]
+timesteps = []
+for step in steps:
+    timesteps.append([i for i in range(step-1, -1, -1)])
+
+pipe = StableDiffusionImg2ImgPipeline(vae=configs.vae, text_encoder=configs.text_encoder, 
                                                 tokenizer=configs.tokenizer, unet=configs.unet, scheduler=configs.scheduler, 
                                                 safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False)
 
-
-image_file_path = configs.inputdatadir + configs.all_classes_list[configs.class_label] + "/" + configs.all_images_list[0]
-original_image = Image.open(image_file_path)
-original_image.save("originalimage.png")
-sample_image = Image.open("church.jpg")
-image = torch.from_numpy(np.array(sample_image)).cuda()
-
-image = torch.from_numpy(np.array(original_image)).cuda()
-
-noisy_image = pipe.create_noisy_image(image, 50)
-print(noisy_image.shape)
-
-#test = StableDiffusionImg2ImgPipelineWithSDEdit(configs.vae, configs.text_encoder, configs.tokenizer, configs.unet, configs.scheduler, None, None, None, False)
+for strength in strengths:
+    for i in range(len(steps)):
+        output = pipe(prompt = prompt, image = sample_image, strength = strength,  timesteps = timesteps[i],  
+                      scheduler = configs.scheduler, return_dict= False)
+        img_np = np.array(output[0][0])
+        image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
+        img_pil = Image.fromarray(image_arr)
+        img_pil.save("denoised_strength_" + str(strength) + "_steps_" + str(steps[i]) + ".jpg")
