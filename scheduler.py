@@ -7,10 +7,20 @@ from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 from torch.distributions import Categorical
 import numpy as np
+from dataclasses import dataclass
 visualizer = visualizer()
 
 def cal_entropy(p):
     return -1.0 * torch.sum(p * torch.log(p), dim = -1)
+
+def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
+    # step 1: resize
+    images = F.interpolate(images, size=size, mode="bilinear", align_corners=False, antialias=True)
+    # step 2: normalize
+    normalized  = (images - torch.mean(images)) / torch.std(images)
+    assert abs(torch.mean(normalized).cpu().numpy())  < 0.001
+    assert abs(torch.std(normalized).cpu().numpy() - 1.0) < 0.001 
+    return normalized     
 
 class ViTScheduler():
     def step(self, vit, images, vit_input_size, layer_idx, head_idx):
@@ -20,35 +30,149 @@ class ViTScheduler():
         qkv = vit.getqkv()
         print("returning qkv")
         return qkv
+    
 
 
-class myddpmscheduler(DDPMScheduler):
-    def add_noise(
+## modified DDPM scheduler with guidance from ViT
+class DDPMSchedulerwithGuidance(DDPMScheduler):
+    def extractImageVitFeature(self, vit, images, vit_input_size, layer_idx, head_idx):
+        vitscheduler = ViTScheduler()
+        qkv = vitscheduler.step(vit, images, vit_input_size, layer_idx, head_idx) 
+    # modify step function s.t each predicted x0 is guided by Vit feature
+    def step(
         self,
-        original_samples: torch.FloatTensor,
-        noise: torch.FloatTensor,
-        timesteps: torch.IntTensor):
-        # Make sure alphas_cumprod and timestep have same device and dtype as original_samples
-        # Move the self.alphas_cumprod to device to avoid redundant CPU to GPU data movement
-        # for the subsequent add_noise calls
-        self.alphas_cumprod = self.alphas_cumprod.to(device=original_samples.device)
-        print("alpha cumprod: ", self.alphas_cumprod)
-        alphas_cumprod = self.alphas_cumprod.to(dtype=original_samples.dtype)
-        timesteps = timesteps.to(original_samples.device)
-        print("timesteps: ", timesteps)
+        vit, 
+        vae,
+        model_output: torch.FloatTensor,
+        timestep: int,
+        sample: torch.FloatTensor,
+        vit_input_size: list[int],
+        vit_input_mean: torch.Tensor,
+        vit_input_std: torch.Tensor,
+        layer_idx: int,
+        guidance_strength: float, 
+        generator=None,
+        return_dict: bool = True,
+    ):
+        """
+        Predict the sample from the previous timestep by reversing the SDE. This function propagates the diffusion
+        process from the learned model outputs (most often the predicted noise).
 
-        sqrt_alpha_prod = alphas_cumprod[timesteps] ** 0.5
-        sqrt_alpha_prod = sqrt_alpha_prod.flatten()
-        while len(sqrt_alpha_prod.shape) < len(original_samples.shape):
-            sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+        Args:
+            vit:
+                Vit used as guidance
+            vae:
+                use decoder to decode latent prediction into image
+            model_output (`torch.FloatTensor`):
+                The direct output from learned diffusion model.
+            timestep (`float`):
+                The current discrete timestep in the diffusion chain.
+            sample (`torch.FloatTensor`):
+                A current instance of a sample created by the diffusion process.
+            generator (`torch.Generator`, *optional*):
+                A random number generator.
+            return_dict (`bool`, *optional*, defaults to `True`):
+                Whether or not to return a [`~schedulers.scheduling_ddpm.DDPMSchedulerOutput`] or `tuple`.
 
-        sqrt_one_minus_alpha_prod = (1 - alphas_cumprod[timesteps]) ** 0.5
-        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
-        while len(sqrt_one_minus_alpha_prod.shape) < len(original_samples.shape):
-            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+        Returns:
+            [`~schedulers.scheduling_ddpm.DDPMSchedulerOutput`] or `tuple`:
+                If return_dict is `True`, [`~schedulers.scheduling_ddpm.DDPMSchedulerOutput`] is returned, otherwise a
+                tuple is returned where the first element is the sample tensor.
 
-        noisy_samples = sqrt_alpha_prod * original_samples + sqrt_one_minus_alpha_prod * noise
-        return noisy_samples
+        """
+        t = timestep
+
+        prev_t = self.previous_timestep(t)
+
+        if model_output.shape[1] == sample.shape[1] * 2 and self.variance_type in ["learned", "learned_range"]:
+            model_output, predicted_variance = torch.split(model_output, sample.shape[1], dim=1)
+        else:
+            predicted_variance = None
+
+        # 1. compute alphas, betas
+        alpha_prod_t = self.alphas_cumprod[t]
+        alpha_prod_t_prev = self.alphas_cumprod[prev_t] if prev_t >= 0 else self.one
+        beta_prod_t = 1 - alpha_prod_t
+        beta_prod_t_prev = 1 - alpha_prod_t_prev
+        current_alpha_t = alpha_prod_t / alpha_prod_t_prev
+        current_beta_t = 1 - current_alpha_t
+
+        # 2. compute predicted original sample from predicted noise also called
+        # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
+
+        # add guidance
+        if self.config.prediction_type == "epsilon":
+            sample_ = sample.clone().requires_grad_(True)
+            print("predicing x0 at time step: ", str(t))
+            pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+
+            # obtain image space prediction by decoding predicted x0
+            print("decode latent into image" + "\n")
+            images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            # images: Batchsize x 3 x 512 x 512
+            print("preprocess image as vit input" + "\n")
+            vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+
+            print("get qkv and attention from vit" + "\n")
+            attentions = vit(layer_idx, vit_input, output_attentions=True)
+
+            oneiterationqkv = vit.getqkv()
+
+            k_allhead = oneiterationqkv[1]
+            print("key of all head: ", k_allhead.shape, k_allhead)
+            gradient = torch.autograd.grad(k_allhead, [sample_])[0]
+            gradient = 0
+
+            # apply guidance
+            pred_epsilon = model_output + guidance_strength * beta_prod_t ** 0.5 * gradient
+        elif self.config.prediction_type == "sample":
+            pred_original_sample = model_output
+        elif self.config.prediction_type == "v_prediction":
+            pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
+        else:
+            raise ValueError(
+                f"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, `sample` or"
+                " `v_prediction`  for the DDPMScheduler."
+            )
+
+        # 3. Clip or threshold "predicted x_0"
+        if self.config.thresholding:
+            pred_original_sample = self._threshold_sample(pred_original_sample)
+        elif self.config.clip_sample:
+            pred_original_sample = pred_original_sample.clamp(
+                -self.config.clip_sample_range, self.config.clip_sample_range
+            )
+
+        # 4. Compute coefficients for pred_original_sample x_0 and current sample x_t
+        # See formula (7) from https://arxiv.org/pdf/2006.11239.pdf
+        pred_original_sample_coeff = (alpha_prod_t_prev ** (0.5) * current_beta_t) / beta_prod_t
+        current_sample_coeff = current_alpha_t ** (0.5) * beta_prod_t_prev / beta_prod_t
+
+        # 5. Compute predicted previous sample µ_t
+        # See formula (7) from https://arxiv.org/pdf/2006.11239.pdf
+        pred_prev_sample = pred_original_sample_coeff * pred_original_sample + current_sample_coeff * sample
+
+        # 6. Add noise
+        variance = 0
+        if t > 0:
+            device = model_output.device
+            variance_noise = randn_tensor(
+                model_output.shape, generator=generator, device=device, dtype=model_output.dtype
+            )
+            if self.variance_type == "fixed_small_log":
+                variance = self._get_variance(t, predicted_variance=predicted_variance) * variance_noise
+            elif self.variance_type == "learned_range":
+                variance = self._get_variance(t, predicted_variance=predicted_variance)
+                variance = torch.exp(0.5 * variance) * variance_noise
+            else:
+                variance = (self._get_variance(t, predicted_variance=predicted_variance) ** 0.5) * variance_noise
+
+        pred_prev_sample = pred_prev_sample + variance
+
+        if not return_dict:
+            return (pred_prev_sample,)
+
+        return DDPMSchedulerOutput(prev_sample=pred_prev_sample, pred_original_sample=pred_original_sample)
 
 class DDIMSchedulerWithViT(DDIMScheduler):
     def step(
@@ -112,15 +236,6 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
             # images: Batchsize x 3 x 512 x 512
             vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-            '''
-            ## return of modified DinoV2
-            class BaseModelOutputWithPoolingwAttentionScores:
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions @after softmax, sum to 1
-            attention_scores=encoder_outputs.attention_scores @before softmax, does not sum to one
-            '''
             print("one time step, getting attention map from Vit ")
             attentions = vit(layer_idx, head_idx, vit_input, output_attentions=True)
 
@@ -130,24 +245,6 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             score_per_head = attention_scores[layer_idx][:, head_idx, 1:, 1:].squeeze()
             all_token_entropy = cal_entropy(score_per_head)
             mean_entropy = torch.mean(all_token_entropy)
-            #visualizer.plot_attentionmap(score_per_head, timestep)
-            #visualizer.plot_attentionmap(attention_scores)
-            #entropy = Categorical(attention_prob).entropy()
-            #print("\n")
-            #print("length of attention scores: ")
-            #print(len(attention_scores))
-            #print("\n")
-            #print("dimension of one attention layer: ")
-            #print(attention_scores[0].shape)
-            #print("\n")
-            #print("value of attention scores for layer 0: ")
-            #print(attention_scores[0])
-            #assert layer_idx < len(attentions), f"{len(attentions):d} attentions in ViT, got {layer_idx:d}"
-            #attention = attentions[layer_idx]
-            #assert head_idx < attention.shape[1], f"{attention.shape[1]:d} heads in attention, got {head_idx:d}"
-            #attention = F.softmax([:, :, 0, 1:], dim = 1)
-            #attention_mean = attention.mean(dim=(-2, -1)).sum()
-            # apply guidance
             gradient = torch.autograd.grad(mean_entropy, [sample])[0]
             gradient = 0
             pred_epsilon = model_output + guidance_strength * beta_prod_t ** 0.5 * gradient
@@ -210,3 +307,24 @@ class DDIMSchedulerWithViT(DDIMScheduler):
 
         return DDIMSchedulerOutput(prev_sample=prev_sample, pred_original_sample=pred_original_sample)
         
+
+
+
+"""# obselete:
+#visualizer.plot_attentionmap(score_per_head, timestep)
+#visualizer.plot_attentionmap(attention_scores)
+#entropy = Categorical(attention_prob).entropy()
+#print("\n")
+#print("length of attention scores: ")
+#print(len(attention_scores))
+#print("\n")
+#print("dimension of one attention layer: ")
+#print(attention_scores[0].shape)
+#print("\n")
+#print("value of attention scores for layer 0: ")
+#print(attention_scores[0])
+#assert layer_idx < len(attentions), f"{len(attentions):d} attentions in ViT, got {layer_idx:d}"
+#attention = attentions[layer_idx]
+#assert head_idx < attention.shape[1], f"{attention.shape[1]:d} heads in attention, got {head_idx:d}"
+#attention = F.softmax([:, :, 0, 1:], dim = 1)
+#attention_mean = attention.mean(dim=(-2, -1)).sum()"""

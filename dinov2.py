@@ -231,7 +231,6 @@ class Dinov2ModelwOutput(Dinov2PreTrainedModel):
         # and head_mask is converted to shape [num_hidden_layers x batch x num_heads x seq_length x seq_length]
         
         head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
-        print("type and shape of pixel value before embedding: ", pixel_values.dtype, pixel_values.shape)
         embedding_output = self.embeddings(pixel_values, bool_masked_pos=bool_masked_pos).cuda()
         encoder_outputs = self.encoder(
             embedding_output,
@@ -249,6 +248,7 @@ class Dinov2ModelwOutput(Dinov2PreTrainedModel):
             return head_outputs + encoder_outputs[1:]
 
         ## set qkv for each iteration
+        ## CLS token w.r.t all other tokens
         self.key = self.encoder.layer[layer_idx].attention.attention.key_layer[:, head_idx, 1:, :]
         self.query = self.encoder.layer[layer_idx].attention.attention.query_layer[:, head_idx, 1:, :]
         self.value = self.encoder.layer[layer_idx].attention.attention.value_layer[:, head_idx, 1:, :]

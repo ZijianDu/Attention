@@ -9,7 +9,7 @@ from sklearn import cluster, decomposition
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from PIL import Image
-from visualization import HeatMap
+from visualizer import HeatMap
 
 class processor():
     def __init__(self):

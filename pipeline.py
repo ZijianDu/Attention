@@ -42,6 +42,7 @@ class ViTPipe():
 class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
     def __init__(
         self,
+        vit, 
         vae,
         text_encoder,
         tokenizer,
@@ -53,11 +54,17 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         requires_safety_checker
         ):
         super().__init__(vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, image_encoder, requires_safety_checker)
-
+        # add vit in constructor 
+        self.register_modules(vit=vit)
+    
     # modified call function to take noisy images and run denoising
-
     def __call__(
         self,
+        vit_input_size, 
+        vit_input_mean, 
+        vit_input_std,
+        layer_idx, 
+        guidance_strength, 
         prompt: Union[str, List[str]] = None,
         image: PipelineImageInput = None,
         strength: float = 0.8,
@@ -301,7 +308,8 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
                 # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(noise_pred, t, latents, **extra_step_kwargs, return_dict=False)[0]
+                latents = self.scheduler.step(self.vit, self.vae, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
+                layer_idx, guidance_strength,  return_dict=False)[0]
 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
@@ -344,7 +352,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
 
-'''
 class StableDiffusionPipelineWithViT(StableDiffusionPipeline):
     def __init__(
         self,
@@ -682,4 +689,3 @@ class StableDiffusionPipelineWithViT(StableDiffusionPipeline):
             return (image, has_nsfw_concept, attention_mean_per_timestep, entropy_per_timestep, images_per_timestep, allqkv)
 
         return StableDiffusionPipelineOutput(images=image, nsfw_content_detected=has_nsfw_concept)
-'''

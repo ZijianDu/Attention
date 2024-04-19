@@ -7,14 +7,14 @@ import requests
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from Attention.visualizer import visualizer
+from visualizer import visualizer
 from scheduler import ViTScheduler
 import shutil
 from processor import processor
 from scheduler import ViTScheduler
 from pipeline import ViTPipe
 from skimage.transform import resize
-from Attention.visualizer import HeatMap
+from visualizer import HeatMap
 import torchvision.transforms as transforms 
 from torchvision.transforms import Resize
 from dataclasses import dataclass
