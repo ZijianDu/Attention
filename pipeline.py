@@ -8,9 +8,9 @@ import inspect
 from packaging import version
 import requests
 import os
-
+from processor import processor
+from visualizer import visualizer
 from diffusers import (StableDiffusionPipeline, StableDiffusionImg2ImgPipeline)
-
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
@@ -27,17 +27,8 @@ from diffusers.utils import (
     unscale_lora_layers,
 )
 
-# pipeline for passing image into ViT 
-class ViTPipe():
-    # define structural components needed for ViT
-    def __init__(self, vit, scheduler, torch_device):
-        self.vit = vit.to(torch_device)
-        self.scheduler = scheduler
-    
-    # define variables/parameters needed to run the pipeline
-    def __call__(self, image, vit_input_size, layer_idx, head_idx):
-        qkv = self.scheduler.step(self.vit, image, vit_input_size, layer_idx, head_idx)
-        return qkv
+# pipeline for passing image into ViT
+from vit_visualization import vitconfigs, ViTFeature
 
 class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
     def __init__(
@@ -282,6 +273,16 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         # 8. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
+
+        # obtain the qkv feature of the clean image
+        
+        vitconfigs = vitconfigs()
+        visualizer, processor = visualizer(), processor()
+        vitfeature = ViTFeature(vitconfigs, processor, visualizer)
+        vitfeature.read_one_image()
+        vitfeature.extract_ViT_features()
+        # vit feature of the original clean image, calculate once per image
+        clean_img_vit_feature = vitfeature._get_feature_qkv()
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
@@ -309,7 +310,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(self.vit, self.vae, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                layer_idx, guidance_strength,  return_dict=False)[0]
+                layer_idx, guidance_strength, clean_img_vit_feature, return_dict=False)[0]
 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}

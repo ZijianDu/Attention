@@ -22,22 +22,11 @@ def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Ten
     assert abs(torch.std(normalized).cpu().numpy() - 1.0) < 0.001 
     return normalized     
 
-class ViTScheduler():
-    def step(self, vit, images, vit_input_size, layer_idx, head_idx):
-        print("layer idx %s, head idx %s", layer_idx, head_idx)
-        vit(layer_idx, head_idx, images, output_attentions=True)
-        print("passed through ViT")
-        qkv = vit.getqkv()
-        print("returning qkv")
-        return qkv
-    
+
 
 
 ## modified DDPM scheduler with guidance from ViT
 class DDPMSchedulerwithGuidance(DDPMScheduler):
-    def extractImageVitFeature(self, vit, images, vit_input_size, layer_idx, head_idx):
-        vitscheduler = ViTScheduler()
-        qkv = vitscheduler.step(vit, images, vit_input_size, layer_idx, head_idx) 
     # modify step function s.t each predicted x0 is guided by Vit feature
     def step(
         self,
@@ -51,6 +40,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         vit_input_std: torch.Tensor,
         layer_idx: int,
         guidance_strength: float, 
+        clean_img_vit_feature, 
         generator=None,
         return_dict: bool = True,
     ):
@@ -125,6 +115,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
             # apply guidance
             pred_epsilon = model_output + guidance_strength * beta_prod_t ** 0.5 * gradient
+        
         elif self.config.prediction_type == "sample":
             pred_original_sample = model_output
         elif self.config.prediction_type == "v_prediction":

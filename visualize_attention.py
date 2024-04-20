@@ -30,7 +30,6 @@ from Attention.visualizer import visualizer
 import shutil
 import unittest
 
-
 class configs:
     def __init__(self):
         self.model_path = 'facebook/dinov2-large'
