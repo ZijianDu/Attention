@@ -7,7 +7,6 @@ from typing import Dict, List, Optional, Tuple, Union, Any, Callable
 import inspect
 from packaging import version
 import requests
-import os
 from dataclasses import dataclass
 from torchvision.utils import save_image
 from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
@@ -36,11 +35,9 @@ from diffusers.utils import (
     unscale_lora_layers,
 )
 from torchvision import transforms
-from torchvision.utils import save_image
 from dinov2 import Dinov2ModelwOutput
 from transformers import AutoImageProcessor, AutoModel, AutoTokenizer
 from PIL import Image
-from dinov2 import Dinov2ModelwOutput
 import os
 import numpy as np
 import requests
@@ -59,7 +56,7 @@ from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
 from configs import sdimg2imgconfigs
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
+NVIDIA_VISIBLE_DEVICES=1
 # configs needed for vit and SDimg2img
 configs = sdimg2imgconfigs()
 visualizer, processor = visualizer(), processor()
@@ -80,15 +77,14 @@ def run_sd_img2img(configs):
                 output = pipe(vit_input_size=configs.size, vit_input_mean=configs.mean, vit_input_std=configs.std, 
                     guidance_strength=guidance_strength, vitfeature = ViTFeature(configs, layer_idx, processor), 
                     prompt = prompt, image = sample_image, strength = strength, num_inference_steps=configs.num_steps, 
-                    scheduler = configs.ddpmscheduler, return_dict= False)
+                    generator = configs.generator, scheduler = configs.ddpmscheduler, return_dict= False)
                 img_np = np.array(output[0][0])
                 image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
                 img_pil = Image.fromarray(image_arr)
-                img_pil.save(configs.outputdir + "cat_strength_" + str(strength) + "_numsteps_" + str(configs.num_steps) 
+                img_pil.save(configs.outputdir + configs.single_image[:-4] + "_strength_" + str(strength) + "_numsteps_" + str(configs.num_steps) 
                             + "_guidencestrength_" + str(guidance_strength) + "_layeridx_" + 
                             str(layer_idx) + ".jpg")
                 print("saved denoised image")
-                del output, img_np, image_arr, img_pil
 
 if __name__ == "__main__":
     run_sd_img2img(configs)

@@ -75,12 +75,19 @@ class sdimg2imgconfigs:
     text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
+    seed = 0
+    generator = torch.Generator(device="cuda").manual_seed(seed)
     # coefficient before guidance
-    guidance_strength = [0.0, 0.1, 0.3, 0.5, 0.7, 1.0, 2.0]
+    #guidance_strength = [0.0, 0.3, 0.7, 1.3, 1.5, 4.0, 10.0]
+    guidance_strength = [500.0]
     # percentage iterations to add noise before denoising, higher means more noise added
-    strengths = [0.1, 0.3, 0.5, 0.8, 1.0, 10]
+    #strengths = [0.2, 0.3, 0.4, 0.5]
+    strengths = [0.35]
+    # total 24 layers
+    layer_idx = [0, 23]
+    #layer_idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 23]
     # number of total iterations, 1000 is maximum
-    num_steps = 1000
+    num_steps = 200
     num_tokens = 256
     image_size = 224
     improcessor = AutoImageProcessor.from_pretrained(model_path)
@@ -89,8 +96,7 @@ class sdimg2imgconfigs:
     # total 16 heads
     num_heads = 16
     head_idx = [i for i in range(num_heads)]
-    # total 24 layers
-    layer_idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 23]
+
     # choose which feature to look, q: 0 k: 1 v: 2
     qkv_choice = 1
     # Vit has image patch 16x16
@@ -100,8 +106,6 @@ class sdimg2imgconfigs:
     batch_size = 1
     ## -1 means ignore no head, all heads are used for guidance
     ignoreheadidx = -1
-    seed = 20
-    np.random.seed(seed)
 
     # read single image
     single_image = "cat.jpg"
@@ -116,6 +120,6 @@ class sdimg2imgconfigs:
         if randnum not in random_list:
             random_list.append(randnum)
     picked_images_index = random_list
-    outputdir = "./outputs/" 
+    outputdir = "./cat/" 
     metricoutputdir = "./metrics/"
     num_images_in_picked_class = len(os.listdir(inputdatadir + all_classes_list[class_label]))

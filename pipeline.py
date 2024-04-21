@@ -54,7 +54,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         vit_input_size, 
         vit_input_mean, 
         vit_input_std,
-        #layer_idx, 
         guidance_strength, 
         vitfeature,
         prompt: Union[str, List[str]] = None,
@@ -281,8 +280,8 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         # vit feature of the original clean image, calculate once per image
         clean_img_vit_features = vitfeature._get_feature_qkv(True)
         
-        print("initializing memory profiling")
-        torch.cuda.memory._record_memory_history(max_entries=MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT)
+        #print("initializing memory profiling")
+        #torch.cuda.memory._record_memory_history(max_entries=MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
@@ -309,14 +308,14 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(self.vit, self.vae, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                guidance_strength, clean_img_vit_features, vitfeature, return_dict=False)[0]
+                guidance_strength, clean_img_vit_features, vitfeature, generator = generator, return_dict=False)[0]
 
-                try:
+                """try:
                     torch.cuda.memory._dump_snapshot("memory.pickle")
                 except Exception as e:
                     logger.error(f"Failed to capture memory snapshot {e}")
                 # Stop recording memory snapshot history.
-                torch.cuda.memory._record_memory_history(enabled=None)
+                torch.cuda.memory._record_memory_history(enabled=None)"""
                 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}

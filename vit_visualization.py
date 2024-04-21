@@ -26,15 +26,13 @@ class ViTPipe():
     
     # define variables/parameters needed to run the pipeline
     def __call__(self, image, vit_input_size, layer_idx):
-        qkv = self.scheduler.step(self.vit, image, vit_input_size, layer_idx)
-        return qkv
+        return self.scheduler.step(self.vit, image, vit_input_size, layer_idx)
     
 class ViTScheduler():
     def step(self, vit, images, vit_input_size, layer_idx):
         vit(layer_idx, images, output_attentions=False)
         return vit.getkey()
     
-
 class ViTFeature:
     def __init__(self, configs, layer_idx, processor):
         self.configs = configs
@@ -67,7 +65,6 @@ class ViTFeature:
             except Exception as e:
                 print(e)
             return self.latent_image_features
-
     
     def read_all_images(self):
         for idx in range(len(self.configs.picked_images_index)):
@@ -95,18 +92,18 @@ class ViTFeature:
     def _extract_ViT_features(self, ignoreheadidx):
         if ignoreheadidx == -1:
             keys = torch.empty(1, self.configs.num_heads, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
-                # batch of qkv for each layer/head index, differnt for each layer/head combination
+            # batch of qkv for each layer/head index, differnt for each layer/head combination
             keys = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = self.layer_idx)
             assert keys.shape[0] == 1 and keys.shape[1] == self.configs.num_heads
             assert keys.shape[2] == self.configs.num_patches ** 2, keys.shape[3] == self.configs.attention_channels
             self.vit_features = keys
             del keys
+        ## needs to be updated
         else: 
             assert ignoreheadidx >= 0 and ignoreheadidx < 16
             tensor_qkv = torch.zeros(1, 1,  self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
             for layer in self.configs.layer_idx:
                 for head in self.configs.head_idx:
-                    print(head, ignoreheadidx)
                     # batch of qkv for each layer/head index, different for each layer/head combination
                     if head != ignoreheadidx:
                         qkv = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = layer, head_idx = head)
@@ -136,9 +133,6 @@ class ViTFeature:
         # set featue to none to prepare for next latent
         self.vit_features = None
 
-
-
-
 def get_original_image_shapes(self, configs):
     for idx in range(len(configs.picked_images_index)):
         img_idx = configs.picked_images_index[idx]
@@ -146,12 +140,3 @@ def get_original_image_shapes(self, configs):
         print("processing image: ", configs.all_images_list[img_idx])
         image = np.array(Image.open(image_file_path))
         configs.all_image_sizes.append(image.shape[:2])
-
-"""vitconfigs = vitconfigs()
-visualizer, processor = visualizer(), processor()
-vitfeature = ViTFeature(vitconfigs, processor, visualizer)
-vitfeature.read_one_image()
-vitfeature.extract_image_ViT_features()
-# vit feature of the original clean image, calculate once per image
-clean_img_vit_feature = vitfeature._get_feature_qkv(True)
-print(clean_img_vit_feature.shape)"""

@@ -247,22 +247,22 @@ class Dinov2ModelwOutput(Dinov2PreTrainedModel):
         sequence_output = self.layernorm(sequence_output)
         pooled_output = sequence_output[:, 0, :]
 
-        #if not return_dict:
-        #    head_outputs = (sequence_output, pooled_output)
-        #    return head_outputs + encoder_outputs[1:]
+        if not return_dict:
+            head_outputs = (sequence_output, pooled_output)
+            return head_outputs + encoder_outputs[1:]
 
         ## set qkv for each iteration
         ## CLS token w.r.t all other tokens
         self.key = self.encoder.layer[layer_idx].attention.attention.key_layer[:, :, 1:, :]
         torch.cuda.empty_cache()
 
-"""        return BaseModelOutputWithPoolingwAttentionScores(
+        return BaseModelOutputWithPoolingwAttentionScores(
             last_hidden_state=sequence_output,
             pooler_output=pooled_output,
             hidden_states=encoder_outputs.hidden_states,
             attentions=encoder_outputs.attentions,
             attention_scores=encoder_outputs.attention_scores,
-        ) """
+        )
 
 
 
