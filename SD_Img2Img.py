@@ -61,40 +61,33 @@ from configs import sdimg2imgconfigs
 import os
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-
+# configs needed for vit and SDimg2img
 configs = sdimg2imgconfigs()
 visualizer, processor = visualizer(), processor()
+# needed to extract image/latent vit features
 vitfeature = ViTFeature(configs, processor, visualizer)
-preprocess = transforms.Compose(
-    [
-        transforms.ToTensor(),
-        transforms.Resize((configs.image_size, configs.image_size)),
-        transforms.Normalize([0.5], [0.5]),
-    ]
-)
 
-def run_sd_img2img():
+def run_sd_img2img(configs):
     # make sure input image is float and in the range of 0 and 1
-    sample_image = torch.tensor(np.array(Image.open("church.jpg"))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
-    #sample_image = preprocess(Image.open("church.jpg"))
+    sample_image = torch.tensor(np.array(Image.open("cat.png"))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
     prompt = "a high quality image"
-    strengths = [0.5]
-    num_steps = 200
-
     pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = configs.vit, vae=configs.vae, text_encoder=configs.text_encoder, 
                                                     tokenizer=configs.tokenizer, unet=configs.unet, scheduler=configs.ddpmscheduler, 
                                                     safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False).to(device="cuda")
-    for strength in strengths:
-        output = pipe(vit_input_size=configs.size, vit_input_mean=configs.mean, vit_input_std=configs.std, 
-                    layer_idx=configs.layeridx, guidance_strength=configs.guidance_strength, vitfeature = vitfeature, 
-                    prompt = prompt, image = sample_image, strength = strength, num_inference_steps=num_steps, 
+    for strength in configs.strengths:
+        for guidance_strength in configs.guidance_strength:
+            output = pipe(vit_input_size=configs.size, vit_input_mean=configs.mean, vit_input_std=configs.std, 
+                    layer_idx=configs.layeridx, guidance_strength=guidance_strength, vitfeature = vitfeature, 
+                    prompt = prompt, image = sample_image, strength = strength, num_inference_steps=configs.num_steps, 
                     scheduler = configs.ddpmscheduler, return_dict= False)
-        img_np = np.array(output[0][0])
-        image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
-        img_pil = Image.fromarray(image_arr)
-        img_pil.save("denoised_strength_" + str(strength) +"_numsteps_" + str(num_steps)+ ".jpg")
-        print("saved denoised image")
+            img_np = np.array(output[0][0])
+            image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
+            img_pil = Image.fromarray(image_arr)
+            img_pil.save("cat_strength_" + str(strength) + "_numsteps_" + str(configs.num_steps) 
+                        + "_guidencestrength_" + str(guidance_strength) + "_layeridx_" + 
+                        str(configs.layeridx) + ".jpg")
+            print("saved denoised image")
 
 if __name__ == "__main__":
-    run_sd_img2img()
+    run_sd_img2img(configs)
     

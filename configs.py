@@ -58,6 +58,8 @@ from torchvision.transforms import Resize
 from dataclasses import dataclass
 from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
 
+
+# needs cleaning
 @dataclass
 class sdimg2imgconfigs:
     model_path = 'facebook/dinov2-large'
@@ -82,7 +84,9 @@ class sdimg2imgconfigs:
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
     layeridx = 0
     head = [0]
-    guidance_strength = 0.0
+    guidance_strength = [0.0, 0.1, 0.3, 0.5, 0.7, 1]
+    strengths = [0.1, 0.3, 0.5, 0.8, 1.0]
+    num_steps = 1000
     guidance_range = [0, 150]
     num_tokens = 256
     trials = 1

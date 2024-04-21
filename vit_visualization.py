@@ -85,7 +85,7 @@ class ViTFeature:
         print("all resized images: ", self.data.shape)
     
     def read_one_image(self):
-        im = Image.open("church.jpg")
+        im = Image.open("cat.png")
         image = self.configs.improcessor(im)["pixel_values"][0]
         self.data[0]= torch.tensor(image)
 
