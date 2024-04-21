@@ -1,4 +1,5 @@
 from diffusers import DDIMScheduler, DDPMScheduler
+from diffusers.utils.torch_utils import randn_tensor
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
@@ -18,11 +19,9 @@ def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Ten
     images = F.interpolate(images, size=size, mode="bilinear", align_corners=False, antialias=True)
     # step 2: normalize
     normalized  = (images - torch.mean(images)) / torch.std(images)
-    assert abs(torch.mean(normalized).cpu().numpy())  < 0.001
-    assert abs(torch.std(normalized).cpu().numpy() - 1.0) < 0.001 
+    assert abs(torch.mean(normalized).data.cpu().numpy())  < 0.001
+    assert abs(torch.std(normalized).detach().cpu().numpy() - 1.0) < 0.001 
     return normalized     
-
-
 
 
 ## modified DDPM scheduler with guidance from ViT
@@ -41,6 +40,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         layer_idx: int,
         guidance_strength: float, 
         clean_img_vit_feature, 
+        vitfeature,
         generator=None,
         return_dict: bool = True,
     ):
@@ -93,24 +93,14 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         # add guidance
         if self.config.prediction_type == "epsilon":
             sample_ = sample.clone().requires_grad_(True)
-            print("predicing x0 at time step: ", str(t))
             pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-
             # obtain image space prediction by decoding predicted x0
-            print("decode latent into image" + "\n")
-            images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
-            # images: Batchsize x 3 x 512 x 512
-            print("preprocess image as vit input" + "\n")
-            vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-
-            print("get qkv and attention from vit" + "\n")
-            attentions = vit(layer_idx, vit_input, output_attentions=True)
-
-            oneiterationqkv = vit.getqkv()
-
-            k_allhead = oneiterationqkv[1]
-            print("key of all head: ", k_allhead.shape, k_allhead)
-            gradient = torch.autograd.grad(k_allhead, [sample_])[0]
+            #images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            #vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+            #vitfeature.extract_latent_ViT_features(vit_input)
+            #latent_vit_features = vitfeature._get_feature_qkv(False)
+            
+            #gradient = torch.autograd.grad(k_allhead, [sample_])[0]
             gradient = 0
 
             # apply guidance

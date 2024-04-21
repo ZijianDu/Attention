@@ -26,9 +26,9 @@ from diffusers.utils import (
     scale_lora_layers,
     unscale_lora_layers,
 )
-
-# pipeline for passing image into ViT
-from vit_visualization import vitconfigs, ViTFeature
+import logging
+logger = logging.getLogger()
+MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT = 10000
 
 class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
     def __init__(
@@ -56,6 +56,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         vit_input_std,
         layer_idx, 
         guidance_strength, 
+        vitfeature,
         prompt: Union[str, List[str]] = None,
         image: PipelineImageInput = None,
         strength: float = 0.8,
@@ -275,33 +276,31 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         self._num_timesteps = len(timesteps)
 
         # obtain the qkv feature of the clean image
-        
-        vitconfigs = vitconfigs()
-        visualizer, processor = visualizer(), processor()
-        vitfeature = ViTFeature(vitconfigs, processor, visualizer)
         vitfeature.read_one_image()
-        vitfeature.extract_ViT_features()
+        vitfeature.extract_image_ViT_features()
         # vit feature of the original clean image, calculate once per image
-        clean_img_vit_feature = vitfeature._get_feature_qkv()
+        clean_img_vit_features = vitfeature._get_feature_qkv(True)
+        
+        print("initializing memory profiling")
+        torch.cuda.memory._record_memory_history(max_entries=MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT)
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
                     continue
-
                 # expand the latents if we are doing classifier free guidance
                 latent_model_input = torch.cat([latents] * 2) if self.do_classifier_free_guidance else latents
                 latent_model_input = self.scheduler.scale_model_input(latent_model_input, t)
-
                 # predict the noise residual
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
+                with torch.no_grad():
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
@@ -310,8 +309,15 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(self.vit, self.vae, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                layer_idx, guidance_strength, clean_img_vit_feature, return_dict=False)[0]
+                layer_idx, guidance_strength, clean_img_vit_features, vitfeature, return_dict=False)[0]
 
+                try:
+                    torch.cuda.memory._dump_snapshot("memory.pickle")
+                except Exception as e:
+                    logger.error(f"Failed to capture memory snapshot {e}")
+                # Stop recording memory snapshot history.
+                torch.cuda.memory._record_memory_history(enabled=None)
+                
                 if callback_on_step_end is not None:
                     callback_kwargs = {}
                     for k in callback_on_step_end_tensor_inputs:
@@ -329,6 +335,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
 
+        
         if not output_type == "latent":
             image = self.vae.decode(latents / self.vae.config.scaling_factor, return_dict=False, generator=generator)[
                 0
@@ -343,7 +350,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         else:
             do_denormalize = [not has_nsfw for has_nsfw in has_nsfw_concept]
 
-        image = self.image_processor.postprocess(image, output_type=output_type, do_denormalize=do_denormalize)
+        image = self.image_processor.postprocess(image.detach(), output_type=output_type, do_denormalize=do_denormalize)
 
         # Offload all models
         self.maybe_free_model_hooks()

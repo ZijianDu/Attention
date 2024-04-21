@@ -14,13 +14,13 @@ import torch
 from transformers.models.clip import CLIPTextModel
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from visualization import visualizer
+from visualizer import visualizer
 import shutil
 from processor import processor
 from scheduler import DDIMSchedulerWithViT
 from pipeline import StableDiffusionPipelineWithViT
 from skimage.transform import resize
-from visualization import HeatMap
+from visualizer import HeatMap
 from dataclasses import dataclass
 @dataclass
 class configs:
@@ -34,7 +34,7 @@ class configs:
     std = torch.tensor(std, device="cuda")
     prompt = "a high-quality image"
     seed = 20
-    num_inference_steps = 5
+    num_inference_steps = 500
     vit = Dinov2ModelwOutput.from_pretrained(model_path)
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae")
     text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
