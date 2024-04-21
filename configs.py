@@ -68,67 +68,54 @@ class sdimg2imgconfigs:
     processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
     size = [processor.crop_size["height"], processor.crop_size["width"]]
     mean, std = processor.image_mean, processor.image_std
-    mean = torch.tensor(mean, device="cuda")
-    std = torch.tensor(std, device="cuda")
+    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype=torch.float16)
     prompt = "a high-quality image"
-    seed = 20
-    num_inference_steps = 100
-    inputdatadir = "/media/data/leo/style_vector_data/"
-    class_label = 0
-    all_classes_list = os.listdir(inputdatadir)
-    all_images_list = os.listdir(inputdatadir + all_classes_list[class_label])
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
     text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
-    layeridx = 0
-    head = [0]
-    guidance_strength = [0.0, 0.1, 0.3, 0.5, 0.7, 1]
-    strengths = [0.1, 0.3, 0.5, 0.8, 1.0]
+    # coefficient before guidance
+    guidance_strength = [0.0, 0.1, 0.3, 0.5, 0.7, 1.0, 2.0]
+    # percentage iterations to add noise before denoising, higher means more noise added
+    strengths = [0.1, 0.3, 0.5, 0.8, 1.0, 10]
+    # number of total iterations, 1000 is maximum
     num_steps = 1000
-    guidance_range = [0, 150]
     num_tokens = 256
-    trials = 1
-    num_pcs = 3
     image_size = 224
-    timestep = 50
     improcessor = AutoImageProcessor.from_pretrained(model_path)
-    size = [improcessor.crop_size["height"], improcessor.crop_size["width"]]
-    mean, std = improcessor.image_mean, improcessor.image_std
-    mean = torch.tensor(mean, device="cuda")
-    std = torch.tensor(std, device="cuda")
     vitscheduler = ViTScheduler()
-    imageH = 224
-    imageW = 224
-    outputdir = "./outputs" 
-    metricoutputdir = "./metrics"
-    outputdir = ["./qkv/q/", "./qkv/k/", "./qkv/v/"]
-    class_label = 2
+    imageH, imageW = 224, 224
     # total 16 heads
     num_heads = 16
     head_idx = [i for i in range(num_heads)]
     # total 24 layers
-    layer_idx = [23]
+    layer_idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 23]
     # choose which feature to look, q: 0 k: 1 v: 2
     qkv_choice = 1
-    inputdatadir = "/media/data/leo/style_vector_data/"
-    all_classes_list = os.listdir(inputdatadir)
-    all_images_list = os.listdir(inputdatadir + all_classes_list[class_label])
-    num_classes = len(all_classes_list)
-    assert class_label < num_classes
-    num_images_in_picked_class = len(os.listdir(inputdatadir + all_classes_list[class_label]))
-    random_list = []
+    # Vit has image patch 16x16
     num_patches = 16
+    # 64 total qkv channels
     attention_channels = 64
     batch_size = 1
-    num_pcs = 3 
-    ## -1 means ignore no head
+    ## -1 means ignore no head, all heads are used for guidance
     ignoreheadidx = -1
-    all_image_sizes = []
+    seed = 20
     np.random.seed(seed)
+
+    # read single image
+    single_image = "cat.jpg"
+    ## to read images in batch
+    inputdatadir = "/media/data/leo/style_vector_data/"
+    random_list = []
+    class_label = 0
+    all_classes_list = os.listdir(inputdatadir)
+    all_images_list = os.listdir(inputdatadir + all_classes_list[class_label])
     while len(random_list) < batch_size:
         randnum = np.random.randint(0, len(all_images_list))
         if randnum not in random_list:
             random_list.append(randnum)
     picked_images_index = random_list
+    outputdir = "./outputs/" 
+    metricoutputdir = "./metrics/"
+    num_images_in_picked_class = len(os.listdir(inputdatadir + all_classes_list[class_label]))

@@ -54,7 +54,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         vit_input_size, 
         vit_input_mean, 
         vit_input_std,
-        layer_idx, 
+        #layer_idx, 
         guidance_strength, 
         vitfeature,
         prompt: Union[str, List[str]] = None,
@@ -309,7 +309,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
                 # compute the previous noisy sample x_t -> x_t-1
                 latents = self.scheduler.step(self.vit, self.vae, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                layer_idx, guidance_strength, clean_img_vit_features, vitfeature, return_dict=False)[0]
+                guidance_strength, clean_img_vit_features, vitfeature, return_dict=False)[0]
 
                 try:
                     torch.cuda.memory._dump_snapshot("memory.pickle")

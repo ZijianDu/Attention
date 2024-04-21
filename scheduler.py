@@ -9,6 +9,7 @@ from transformers import AutoImageProcessor, AutoModel
 from torch.distributions import Categorical
 import numpy as np
 from dataclasses import dataclass
+from torch.nn import MSELoss
 visualizer = visualizer()
 
 def cal_entropy(p):
@@ -37,7 +38,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         vit_input_size: list[int],
         vit_input_mean: torch.Tensor,
         vit_input_std: torch.Tensor,
-        layer_idx: int,
         guidance_strength: float, 
         clean_img_vit_feature, 
         vitfeature,
@@ -93,18 +93,27 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         # add guidance
         if self.config.prediction_type == "epsilon":
             sample_ = sample.clone().requires_grad_(True)
-            pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-            # obtain image space prediction by decoding predicted x0
-            #images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
-            #vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-            #vitfeature.extract_latent_ViT_features(vit_input)
-            #latent_vit_features = vitfeature._get_feature_qkv(False)
+            loss = MSELoss()
+            pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
             
-            #gradient = torch.autograd.grad(k_allhead, [sample_])[0]
-            gradient = 0
+            if guidance_strength == 0:
+                pred_epsilon = model_output
+            else:
+                # obtain image space prediction by decoding predicted x0
+                images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+                vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+                vitfeature.extract_latent_ViT_features(vit_input)
+                # false if we are not getting original image feature
+                latent_vit_features = vitfeature._get_feature_qkv(isoriginal = False)
 
-            # apply guidance
-            pred_epsilon = model_output + guidance_strength * beta_prod_t ** 0.5 * gradient
+                # MSE between latent vit features and clean image features as guidance
+                guidance = torch.sum(loss(latent_vit_features, clean_img_vit_feature))
+                
+                # calculate gradient
+                gradient = torch.autograd.grad(guidance, [sample_])[0]
+
+                # apply guidance
+                pred_epsilon = model_output + guidance_strength * beta_prod_t ** 0.5 * gradient
         
         elif self.config.prediction_type == "sample":
             pred_original_sample = model_output

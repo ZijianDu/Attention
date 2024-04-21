@@ -36,10 +36,10 @@ class ViTScheduler():
     
 
 class ViTFeature:
-    def __init__(self, configs, processor, visualizer):
+    def __init__(self, configs, layer_idx, processor):
         self.configs = configs
+        self.layer_idx = layer_idx
         self.processor = processor
-        self.visualizer = visualizer
         self.pipe = ViTPipe(vit = self.configs.vit, scheduler = self.configs.vitscheduler, torch_device = 'cuda')
         # data is direct input to ViT model, shape: batch, 3, 224, 224, preprocessing needed if 
         # original image is of different shape
@@ -85,7 +85,7 @@ class ViTFeature:
         print("all resized images: ", self.data.shape)
     
     def read_one_image(self):
-        im = Image.open("cat.png")
+        im = Image.open(self.configs.single_image)
         image = self.configs.improcessor(im)["pixel_values"][0]
         self.data[0]= torch.tensor(image)
 
@@ -95,9 +95,8 @@ class ViTFeature:
     def _extract_ViT_features(self, ignoreheadidx):
         if ignoreheadidx == -1:
             keys = torch.empty(1, self.configs.num_heads, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
-            for layer in self.configs.layer_idx:
                 # batch of qkv for each layer/head index, differnt for each layer/head combination
-                keys = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = layer)
+            keys = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = self.layer_idx)
             assert keys.shape[0] == 1 and keys.shape[1] == self.configs.num_heads
             assert keys.shape[2] == self.configs.num_patches ** 2, keys.shape[3] == self.configs.attention_channels
             self.vit_features = keys
