@@ -16,8 +16,6 @@ import torchvision.transforms as transforms
 from torchvision.transforms import Resize
 from dataclasses import dataclass
 import sys
-
-
 class ViTPipe():
     # define structural components needed for ViT
     def __init__(self, vit, scheduler, torch_device):
@@ -82,7 +80,7 @@ class ViTFeature:
         print("all resized images: ", self.data.shape)
     
     def read_one_image(self):
-        im = Image.open(self.configs.single_image)
+        im = Image.open(self.configs.single_image_name)
         image = self.configs.improcessor(im)["pixel_values"][0]
         self.data[0]= torch.tensor(image)
 

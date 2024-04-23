@@ -62,6 +62,7 @@ from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
 # needs cleaning
 @dataclass
 class sdimg2imgconfigs:
+    ## model related
     model_path = 'facebook/dinov2-large'
     link = "runwayml/stable-diffusion-v1-5"
     tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
@@ -77,15 +78,23 @@ class sdimg2imgconfigs:
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
     seed = 0
     generator = torch.Generator(device="cuda").manual_seed(seed)
+
+    # model parameters
     # coefficient before guidance
     #guidance_strength = [0.0, 0.3, 0.7, 1.3, 1.5, 4.0, 10.0]
-    guidance_strength = [500.0]
+    guidance_strength = [0, 5e2, 5e3, 5e4, 5e5]
     # percentage iterations to add noise before denoising, higher means more noise added
     #strengths = [0.2, 0.3, 0.4, 0.5]
-    strengths = [0.35]
+    strengths = [0.3, 0.35, 0.45, 0.5, 0.55, 0.6]
     # total 24 layers
-    layer_idx = [0, 23]
-    #layer_idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 23]
+    #layer_idx = [0, 5, 10]
+    layer_idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 23]
+    all_params = []
+    for s in strengths:
+        for g in guidance_strength:
+            for l in layer_idx:
+                all_params.append([s, g, l])
+    assert len(all_params) == len(strengths) * len(guidance_strength) * len(layer_idx)
     # number of total iterations, 1000 is maximum
     num_steps = 200
     num_tokens = 256
@@ -107,8 +116,10 @@ class sdimg2imgconfigs:
     ## -1 means ignore no head, all heads are used for guidance
     ignoreheadidx = -1
 
+    # data related
     # read single image
-    single_image = "cat.jpg"
+    single_image_name = "cat.jpg"
+    single_image= improcessor(Image.open(single_image_name))["pixel_values"][0]
     ## to read images in batch
     inputdatadir = "/media/data/leo/style_vector_data/"
     random_list = []
@@ -123,3 +134,6 @@ class sdimg2imgconfigs:
     outputdir = "./cat/" 
     metricoutputdir = "./metrics/"
     num_images_in_picked_class = len(os.listdir(inputdatadir + all_classes_list[class_label]))
+
+    # visualization related
+    dpi = 300

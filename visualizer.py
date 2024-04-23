@@ -3,8 +3,6 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 import os
-import matplotlib
-import matplotlib.pyplot as plt
 import scipy.ndimage as ndimage
 
 class visualizer():
@@ -31,8 +29,23 @@ class visualizer():
         plt.imshow(map, cmap='viridis', interpolation='nearest')
         plt.savefig(folder + name)
 
-    def plot_qkv(allqkv, iteration, key):
-        pass
+    def _plot_ssim(self, ssim):
+        assert len(self.all_params) == len(ssim)
+        strength = [i[0] for i in self.all_params]
+        guidance = [i[1] for i in self.all_params]
+        idx = [i[2] for i in self.all_params]
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        scatter = ax.scatter(strength, np.log(guidance), idx, c=np.sqrt(ssim), cmap='plasma')
+        ax.set_xlabel("diffusion strength")
+        ax.set_ylabel("log(vit guidance)")
+        ax.set_zlabel("layer index")
+        ax.set_title("SSIM")
+        fig.colorbar(scatter, ax=ax)
+        plt.savefig(self.single_image_name[:-4] + "_seed_" +str(self.seed)+".jpg", dpi = self.dpi)
+
+
 
 
 class HeatMap:

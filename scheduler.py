@@ -95,32 +95,29 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             sample_ = sample.clone().requires_grad_(True)
             loss = MSELoss()
             pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+        
+            # obtain image space prediction by decoding predicted x0
+            images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+            vitfeature.extract_latent_ViT_features(vit_input)
+            # false if we are not getting original image feature
+            latent_vit_features = vitfeature._get_feature_qkv(isoriginal = False)
+            print("model output: ", torch.mean(model_output).data, torch.std(model_output).data)
+            print("latent vit features: ", torch.mean(latent_vit_features).data, torch.std(latent_vit_features).data)
+            print("clean vit features: ", torch.mean(clean_img_vit_feature).data, torch.std(clean_img_vit_feature).data)
+
+            # MSE between latent vit features and clean image features as guidance
+            guidance = torch.sum(loss(latent_vit_features, clean_img_vit_feature))
+            print("guidance: ", torch.mean(guidance).data, torch.std(guidance).data)
             
-            if guidance_strength == 0:
-                pred_epsilon = model_output
-            else:
-                # obtain image space prediction by decoding predicted x0
-                images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
-                vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-                vitfeature.extract_latent_ViT_features(vit_input)
-                # false if we are not getting original image feature
-                latent_vit_features = vitfeature._get_feature_qkv(isoriginal = False)
-                print("model output: ", torch.mean(model_output).data, torch.std(model_output).data)
-                print("latent vit features: ", torch.mean(latent_vit_features).data, torch.std(latent_vit_features).data)
-                print("clean vit features: ", torch.mean(clean_img_vit_feature).data, torch.std(clean_img_vit_feature).data)
+            # calculate gradient
+            gradient = torch.autograd.grad(guidance, [sample_])[0]
+            print("gradient: ", torch.mean(gradient).data, torch.std(gradient).data)
 
-                # MSE between latent vit features and clean image features as guidance
-                guidance = torch.sum(loss(latent_vit_features, clean_img_vit_feature))
-                print("guidance: ", torch.mean(guidance).data, torch.std(guidance).data)
-                
-                # calculate gradient
-                gradient = torch.autograd.grad(guidance, [sample_])[0]
-                print("gradient: ", torch.mean(gradient).data, torch.std(gradient).data)
-
-                # apply guidance
-                actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
-                pred_epsilon = model_output + actual_guidance
-                print("actually added: ", torch.mean(actual_guidance).data, torch.std(actual_guidance).data)
+            # apply guidance
+            actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
+            pred_epsilon = model_output + actual_guidance
+            print("actually added: ", torch.mean(actual_guidance).data, torch.std(actual_guidance).data)
         
         elif self.config.prediction_type == "sample":
             pred_original_sample = model_output
