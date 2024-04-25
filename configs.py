@@ -1,6 +1,3 @@
-import torch
-import numpy as np
-#import torchvision.utility as tvu
 from PIL import Image
 import tqdm
 from typing import Dict, List, Optional, Tuple, Union, Any, Callable
@@ -10,8 +7,7 @@ import requests
 import os
 from dataclasses import dataclass
 from torchvision.utils import save_image
-from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
-from transformers import AutoImageProcessor, AutoModel, AutoTokenizer
+from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, AutoImageProcessor, AutoModel, AutoTokenizer
 from diffusers.configuration_utils import FrozenDict
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMixin, TextualInversionLoaderMixin
@@ -36,26 +32,16 @@ from diffusers.utils import (
     unscale_lora_layers,
 )
 from torchvision import transforms
-from torchvision.utils import save_image
 from dinov2 import Dinov2ModelwOutput
-
-from transformers import AutoImageProcessor, AutoModel, AutoTokenizer
-from PIL import Image
-from dinov2 import Dinov2ModelwOutput
-import os
 import numpy as np
-import requests
 import torch
 import torch.nn.functional as F
-from typing import List, Optional, Tuple, Union
-from visualizer import visualizer
+from visualizer import visualizer, HeatMap
 import shutil
 from processor import processor
 from skimage.transform import resize
-from visualizer import HeatMap
 import torchvision.transforms as transforms 
 from torchvision.transforms import Resize
-from dataclasses import dataclass
 from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
 
 
@@ -82,13 +68,12 @@ class sdimg2imgconfigs:
     # model parameters
     # coefficient before guidance
     #guidance_strength = [0.0, 0.3, 0.7, 1.3, 1.5, 4.0, 10.0]
-    guidance_strength = [0, 5e2, 5e3, 5e4, 5e5]
+    guidance_strength = [0, 1, 5e1, 1e2, 5e2]
     # percentage iterations to add noise before denoising, higher means more noise added
     #strengths = [0.2, 0.3, 0.4, 0.5]
-    strengths = [0.3, 0.35, 0.45, 0.5, 0.55, 0.6]
+    strengths = [0.6]
     # total 24 layers
-    #layer_idx = [0, 5, 10]
-    layer_idx = [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 23]
+    layer_idx = [0]
     all_params = []
     for s in strengths:
         for g in guidance_strength:
@@ -96,7 +81,7 @@ class sdimg2imgconfigs:
                 all_params.append([s, g, l])
     assert len(all_params) == len(strengths) * len(guidance_strength) * len(layer_idx)
     # number of total iterations, 1000 is maximum
-    num_steps = 200
+    num_steps = 500
     num_tokens = 256
     image_size = 224
     improcessor = AutoImageProcessor.from_pretrained(model_path)
@@ -115,12 +100,12 @@ class sdimg2imgconfigs:
     batch_size = 1
     ## -1 means ignore no head, all heads are used for guidance
     ignoreheadidx = -1
-
     # data related
     # read single image
     single_image_name = "cat.jpg"
-    single_image= improcessor(Image.open(single_image_name))["pixel_values"][0]
-    ## to read images in batch
+    single_image = improcessor(Image.open(single_image_name))["pixel_values"][0]
+    
+    # to read images in batch
     inputdatadir = "/media/data/leo/style_vector_data/"
     random_list = []
     class_label = 0
@@ -131,7 +116,8 @@ class sdimg2imgconfigs:
         if randnum not in random_list:
             random_list.append(randnum)
     picked_images_index = random_list
-    outputdir = "./cat/" 
+    # outputs
+    outputdir = "./debug/" 
     metricoutputdir = "./metrics/"
     num_images_in_picked_class = len(os.listdir(inputdatadir + all_classes_list[class_label]))
 

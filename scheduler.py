@@ -32,6 +32,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         self,
         vit, 
         vae,
+        debugger, 
         model_output: torch.FloatTensor,
         timestep: int,
         sample: torch.FloatTensor,
@@ -53,11 +54,11 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
                 Vit used as guidance
             vae:
                 use decoder to decode latent prediction into image
-            model_output (`torch.FloatTensor`):
+            model_output/predicted noise (`torch.FloatTensor`):
                 The direct output from learned diffusion model.
             timestep (`float`):
                 The current discrete timestep in the diffusion chain.
-            sample (`torch.FloatTensor`):
+            sample/latent/xt (`torch.FloatTensor`):
                 A current instance of a sample created by the diffusion process.
             generator (`torch.Generator`, *optional*):
                 A random number generator.
@@ -71,6 +72,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
         """
         t = timestep
+        debugger.log({"timestep": timestep})
 
         prev_t = self.previous_timestep(t)
 
@@ -87,47 +89,48 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         current_alpha_t = alpha_prod_t / alpha_prod_t_prev
         current_beta_t = 1 - current_alpha_t
 
+        #debugger.log({"alpha_prod_t": alpha_prod_t})
+        #debugger.log({"beta_prod_t": beta_prod_t})
+
+
         # 2. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
 
         # add guidance
         if self.config.prediction_type == "epsilon":
             sample_ = sample.clone().requires_grad_(True)
+            
+            debugger.log({"latent": sample_.detach().cpu().numpy()})
             loss = MSELoss()
+            
+            # pred original sample ix x0_hat
             pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-        
+            
+            # this is needed to calculate vit feature for guidance
             # obtain image space prediction by decoding predicted x0
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+          
             vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+          
             vitfeature.extract_latent_ViT_features(vit_input)
             # false if we are not getting original image feature
             latent_vit_features = vitfeature._get_feature_qkv(isoriginal = False)
-            print("model output: ", torch.mean(model_output).data, torch.std(model_output).data)
-            print("latent vit features: ", torch.mean(latent_vit_features).data, torch.std(latent_vit_features).data)
-            print("clean vit features: ", torch.mean(clean_img_vit_feature).data, torch.std(clean_img_vit_feature).data)
-
+            debugger.log({"latent vit feature" : latent_vit_features})
+          
             # MSE between latent vit features and clean image features as guidance
-            guidance = torch.sum(loss(latent_vit_features, clean_img_vit_feature))
-            print("guidance: ", torch.mean(guidance).data, torch.std(guidance).data)
-            
+            curr_loss = loss(latent_vit_features, clean_img_vit_feature)
+            guidance = torch.sum(curr_loss)
+            debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
+          
             # calculate gradient
             gradient = torch.autograd.grad(guidance, [sample_])[0]
-            print("gradient: ", torch.mean(gradient).data, torch.std(gradient).data)
-
-            # apply guidance
+            debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
+           
+            # calculate actual guidance and add to xt
             actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
-            pred_epsilon = model_output + actual_guidance
-            print("actually added: ", torch.mean(actual_guidance).data, torch.std(actual_guidance).data)
-        
-        elif self.config.prediction_type == "sample":
-            pred_original_sample = model_output
-        elif self.config.prediction_type == "v_prediction":
-            pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
-        else:
-            raise ValueError(
-                f"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, `sample` or"
-                " `v_prediction`  for the DDPMScheduler."
-            )
+            sample_ = sample_ - actual_guidance
+            debugger.log({"actual guidance":actual_guidance.detach().cpu().numpy(), "xt with guidance": sample_.detach().cpu().numpy()})
+       
 
         # 3. Clip or threshold "predicted x_0"
         if self.config.thresholding:
@@ -144,7 +147,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
         # 5. Compute predicted previous sample µ_t
         # See formula (7) from https://arxiv.org/pdf/2006.11239.pdf
-        pred_prev_sample = pred_original_sample_coeff * pred_original_sample + current_sample_coeff * sample
+        pred_prev_sample = pred_original_sample_coeff * pred_original_sample + current_sample_coeff * sample_
 
         # 6. Add noise
         variance = 0
@@ -153,6 +156,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             variance_noise = randn_tensor(
                 model_output.shape, generator=generator, device=device, dtype=model_output.dtype
             )
+            
             if self.variance_type == "fixed_small_log":
                 variance = self._get_variance(t, predicted_variance=predicted_variance) * variance_noise
             elif self.variance_type == "learned_range":
@@ -162,6 +166,8 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
                 variance = (self._get_variance(t, predicted_variance=predicted_variance) ** 0.5) * variance_noise
 
         pred_prev_sample = pred_prev_sample + variance
+        debugger.log({"ddpm noise": variance.cpu().numpy()})
+        debugger.log({"xt-1 with noise": pred_prev_sample.detach().cpu().numpy()})
 
         if not return_dict:
             return (pred_prev_sample,)

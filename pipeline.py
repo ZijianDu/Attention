@@ -66,6 +66,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         num_images_per_prompt: Optional[int] = 1,
         eta: Optional[float] = 0.0,
         generator: Optional[Union[torch.Generator, List[torch.Generator]]] = None,
+        debugger = None, 
         prompt_embeds: Optional[torch.FloatTensor] = None,
         negative_prompt_embeds: Optional[torch.FloatTensor] = None,
         ip_adapter_image: Optional[PipelineImageInput] = None,
@@ -158,7 +159,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                 second element is a list of `bool`s indicating whether the corresponding generated image contains
                 "not-safe-for-work" (nsfw) content.
         """
-
         callback = kwargs.pop("callback", None)
         callback_steps = kwargs.pop("callback_steps", None)
 
@@ -300,14 +300,15 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                         added_cond_kwargs=added_cond_kwargs,
                         return_dict=False,
                     )[0]
+                    debugger.log({"predicted noise": noise_pred.cpu().numpy()})
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
-                # compute the previous noisy sample x_t -> x_t-1
-                latents = self.scheduler.step(self.vit, self.vae, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
+                # compute the previous noisy sample x_t -> x_t-1, iterative, schedule return xt
+                latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
                 guidance_strength, clean_img_vit_features, vitfeature, generator = generator, return_dict=False)[0]
 
                 """try:
