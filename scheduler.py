@@ -124,7 +124,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
           
             # calculate gradient
             gradient = torch.autograd.grad(guidance, [sample_])[0]
-            debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
+            #debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
            
             # calculate actual guidance and add to xt
             actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient

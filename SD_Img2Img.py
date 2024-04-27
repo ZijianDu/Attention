@@ -53,47 +53,83 @@ from scheduler import _preprocess_vit_input
 from pytorch_ssim import ssim
 import wandb
 
-
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import warnings
+warnings.filterwarnings("ignore")
 # configs needed for vit and SDimg2img
-configs = sdimg2imgconfigs()
+sdconfigs = sdimg2imgconfigs()
 visualizer, processor = visualizer(), processor()
 
-
-# Log the plot
-
-def run_sd_img2img(configs, wandb):
-    # make sure input image is float and in the range of 0 and 1
-    sample_image = torch.tensor(np.array(Image.open(configs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
-    prompt = "a high quality image"
-    pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = configs.vit, vae=configs.vae, text_encoder=configs.text_encoder, 
-                                                    tokenizer=configs.tokenizer, unet=configs.unet, scheduler=configs.ddpmscheduler,
+class runner(sdimg2imgconfigs):
+    def __init__(self, sdconfigs):
+        self.sdconfigs = sdconfigs
+    # function to run experiment through predefined parameters
+    def run_sd_img2img(self, wandb, seed, config = None):
+        sample_image = torch.tensor(np.array(Image.open(sdconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
+        prompt = "a high quality image"
+        pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = sdconfigs.vit, vae=sdconfigs.vae, text_encoder=sdconfigs.text_encoder, 
+                                                    tokenizer=sdconfigs.tokenizer, unet=sdconfigs.unet, scheduler=sdconfigs.ddpmscheduler,
                                                     safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False).to(device="cuda")
-   
-    # main iteration loop, iterate through important parameters: diffuse strength, guidance strength, layer of vit attentions
-    for param in configs.all_params:
-        output = pipe(vit_input_size=configs.size, vit_input_mean=configs.mean, vit_input_std=configs.std, 
-            guidance_strength=param[1], vitfeature = ViTFeature(configs, param[2], processor), 
-            prompt = prompt, image = sample_image, strength = param[0], num_inference_steps=configs.num_steps, 
-            generator = configs.generator, debugger = wandb, return_dict= False)
-        img_np = np.array(output[0][0])
-        image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
-        wandb.log({"predicted image":wandb.Image(image_arr)})
-        img_pil = Image.fromarray(image_arr)
-        if "seed" + str(configs.seed) not in os.listdir(configs.outputdir):
-            os.mkdir(configs.outputdir + "seed" + str(configs.seed))
-        image_name = "strength_" + str(param[0]) + "_guidencestrength_" + str(param[1]) + "_layeridx_" + str(param[2]) + ".jpg"
-        img_pil.save(configs.outputdir + "seed" + str(configs.seed) + "/" + image_name)
-        image = configs.improcessor(
-        Image.open(configs.outputdir + "seed" + str(configs.seed) + "/" + image_name))["pixel_values"][0]
-        curr_ssim = ssim(torch.tensor(image).unsqueeze(0), 
-                         torch.tensor(configs.single_image).unsqueeze(0)).data
-        wandb.log({"ssim":curr_ssim.cpu().numpy()})
+        
+        for i, param in enumerate(sdconfigs.all_params):
+            wandb.log({"diffusion strength" : param[1], "guidance strength" : param[0]})
+            output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
+                guidance_strength=param[2], vitfeature = ViTFeature(sdconfigs, sdconfigs.layer_idx[0], processor), 
+                prompt = prompt, image = sample_image, strength = param[1], num_inference_steps=sdconfigs.num_steps, 
+                generator = torch.Generator(device="cuda").manual_seed(seed), debugger = wandb, return_dict= False)
+            img_np = np.array(output[0][0])
+            image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
+            wandb.log({"predicted image":wandb.Image(image_arr)})
+            img_pil = Image.fromarray(image_arr)
+            if "seed" + str(seed) not in os.listdir(sdconfigs.outputdir):
+                os.mkdir(sdconfigs.outputdir + "seed" + str(seed))
+            image_name = "strength_" + str(param[1]) + "_guidencestrength_" + str(param[2]) + ".jpg"
+            img_pil.save(sdconfigs.outputdir + "seed" + str(seed) + "/" + image_name)
+            image = sdconfigs.improcessor(Image.open(sdconfigs.outputdir + "seed" + str(seed) + "/" + image_name))["pixel_values"][0]
+            curr_ssim = ssim(torch.tensor(image).unsqueeze(0), 
+                            torch.tensor(sdconfigs.single_image).unsqueeze(0)).data
+            
+            wandb.log({"ssim":curr_ssim.cpu().numpy()})
+
+    # function to run sweeping using configs defined by wandb.config dict
+    def run_parameter_sweeping(self, config = None):
+        sample_image = torch.tensor(np.array(Image.open(sdconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
+        prompt = "a high quality image"
+        with wandb.init(config = config):
+            config = wandb.config
+            pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = sdconfigs.vit, vae=sdconfigs.vae, text_encoder=sdconfigs.text_encoder, 
+                                                    tokenizer=sdconfigs.tokenizer, unet=sdconfigs.unet, scheduler=sdconfigs.ddpmscheduler,
+                                                    safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False).to(device="cuda")
+            output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
+                guidance_strength=config.guidance_strength, vitfeature = ViTFeature(sdconfigs, sdconfigs.layer_idx[0], processor), 
+                prompt = prompt, image = sample_image, strength = config.diffusion_strength, num_inference_steps=sdconfigs.num_steps, 
+                generator = None, debugger = wandb, return_dict= False)
+            img_np = np.array(output[0][0])
+            image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
+            wandb.log({"predicted image":wandb.Image(image_arr)})
+            img_pil = Image.fromarray(image_arr)
+            # no seed needed since we sample from a parameter distribution
+            image_name = "diffusion_strength_" + str(config.diffusion_strength) + "_guidencestrength_" + str(config.guidance_strength) + ".jpg"
+            img_pil.save(sdconfigs.sweepingdir + "/" + image_name)
+            image = sdconfigs.improcessor(Image.open(sdconfigs.sweepingdir +  "/" + image_name))["pixel_values"][0]
+            curr_ssim = ssim(torch.tensor(image).unsqueeze(0), 
+                            torch.tensor(sdconfigs.single_image).unsqueeze(0)).data
+            
+            wandb.log({"ssim":curr_ssim.cpu().numpy()})
 
 if __name__ == "__main__":
-    wandb.login()
-    wandb.init(project="attention", notes = "learning wandb")
-    configs.seed = 0
-    run_sd_img2img(configs, wandb)
-    wandb.finish()
+    runner = runner(sdconfigs)
+    # perform parameter sweeping procedure
+    if sdconfigs.mode == "sweepinng":
+        wandb.login()
+        sweep_id = wandb.sweep(sdconfigs.sweep_config, project = sdconfigs.sweeping_project_name)
+        wandb.agent(sweep_id, runner.run_parameter_sweeping, count = sdconfigs.sweeping_run_count)
+    
+    # perform normal run given preselected parameters
+    if sdconfigs.mode == "running":  
+        wandb.login()
+        for seed in range(5):
+            wandb.init(project = sdconfigs.running_project_name, name = "run: " + str(seed))
+            runner.run_sd_img2img(wandb, seed)
+            wandb.finish()
     

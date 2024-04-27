@@ -56,30 +56,30 @@ class sdimg2imgconfigs:
     size = [processor.crop_size["height"], processor.crop_size["width"]]
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
-    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype=torch.float16)
+    vit = Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype = torch.float16)
+    vits = [Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype = torch.float16)]
+#            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-small', torch_dtype = torch.float16),
+ #            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype=torch.float16)]
+    
     prompt = "a high-quality image"
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
     text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
-    seed = 0
-    generator = torch.Generator(device="cuda").manual_seed(seed)
-
     # model parameters
     # coefficient before guidance
-    #guidance_strength = [0.0, 0.3, 0.7, 1.3, 1.5, 4.0, 10.0]
-    guidance_strength = [0, 1, 5e1, 1e2, 5e2]
+    guidance_strength = [0, 10, 20, 30, 35, 40, 45, 50, 55, 60]
     # percentage iterations to add noise before denoising, higher means more noise added
-    #strengths = [0.2, 0.3, 0.4, 0.5]
-    strengths = [0.6]
+    strengths = [0.28, 0.30, 0.32, 0.34, 0.36, 0.38, 0.40]
     # total 24 layers
     layer_idx = [0]
     all_params = []
-    for s in strengths:
-        for g in guidance_strength:
-            for l in layer_idx:
-                all_params.append([s, g, l])
-    assert len(all_params) == len(strengths) * len(guidance_strength) * len(layer_idx)
+    for vitidx in range(len(vits)):
+        for s in strengths:
+            for g in guidance_strength:
+                all_params.append([vitidx, s, g])
+    assert len(all_params) == len(vits) * len(strengths) * len(guidance_strength) 
+    
     # number of total iterations, 1000 is maximum
     num_steps = 500
     num_tokens = 256
@@ -87,6 +87,7 @@ class sdimg2imgconfigs:
     improcessor = AutoImageProcessor.from_pretrained(model_path)
     vitscheduler = ViTScheduler()
     imageH, imageW = 224, 224
+    
     # total 16 heads
     num_heads = 16
     head_idx = [i for i in range(num_heads)]
@@ -100,26 +101,44 @@ class sdimg2imgconfigs:
     batch_size = 1
     ## -1 means ignore no head, all heads are used for guidance
     ignoreheadidx = -1
+    
     # data related
     # read single image
-    single_image_name = "cat.jpg"
-    single_image = improcessor(Image.open(single_image_name))["pixel_values"][0]
+    base_folder = "/home/leo/Documents/GenAI-Vision/attention/"
+    single_image_name = "bird.jpg"
+    single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
+
+    #wandb configs for sweepinng parameters
+    sweep_config = {'method':'random'}
+    metric = {
+            'name' : 'ssim',
+            'goal' : 'maximize'
+            }
+    sweep_config['metric'] = metric
+    parameters_dict =  { }
+    sweep_config['parameters'] = parameters_dict
     
-    # to read images in batch
-    inputdatadir = "/media/data/leo/style_vector_data/"
-    random_list = []
-    class_label = 0
-    all_classes_list = os.listdir(inputdatadir)
-    all_images_list = os.listdir(inputdatadir + all_classes_list[class_label])
-    while len(random_list) < batch_size:
-        randnum = np.random.randint(0, len(all_images_list))
-        if randnum not in random_list:
-            random_list.append(randnum)
-    picked_images_index = random_list
+    parameters_dict.update(
+        {
+            'guidance_strength' : {
+                'distribution' : 'normal',
+                'mu' : 40,
+                'sigma' : 25
+            },
+            'diffusion_strength' : {
+                'distribution' : 'normal',
+                'mu' : 0.4,
+                'sigma' : 0.05
+            },
+        })
+    
     # outputs
     outputdir = "./debug/" 
+    running_project_name = "attention guided sd"
+    sweepingdir = "./sweeping/"
+    sweeping_project_name = "sweep1"
+    sweeping_run_count = 50
     metricoutputdir = "./metrics/"
-    num_images_in_picked_class = len(os.listdir(inputdatadir + all_classes_list[class_label]))
 
     # visualization related
     dpi = 300

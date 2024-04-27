@@ -34,7 +34,6 @@ class BaseModelOutputWithPoolingwAttentionScores(BaseModelOutputWithPooling):
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
     attention_scores: Optional[Tuple[torch.FloatTensor, ...]] = None
 
-
 @dataclass
 class BaseModelOutputwAttentionScores(BaseModelOutputWithPooling):
     last_hidden_state: torch.FloatTensor = None
