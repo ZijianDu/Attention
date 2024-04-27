@@ -68,17 +68,18 @@ class sdimg2imgconfigs:
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
     # model parameters
     # coefficient before guidance
-    guidance_strength = [0, 10, 20, 30, 35, 40, 45, 50, 55, 60]
+    guidance_strength = [0, 10, 20, 26, 28, 30, 32, 34, 36, 40]
+  
     # percentage iterations to add noise before denoising, higher means more noise added
-    strengths = [0.28, 0.30, 0.32, 0.34, 0.36, 0.38, 0.40]
+    diffusion_strength = [0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
     # total 24 layers
     layer_idx = [0]
     all_params = []
     for vitidx in range(len(vits)):
-        for s in strengths:
+        for s in diffusion_strength:
             for g in guidance_strength:
                 all_params.append([vitidx, s, g])
-    assert len(all_params) == len(vits) * len(strengths) * len(guidance_strength) 
+    assert len(all_params) == len(vits) * len(diffusion_strength) * len(guidance_strength) 
     
     # number of total iterations, 1000 is maximum
     num_steps = 500
@@ -108,6 +109,14 @@ class sdimg2imgconfigs:
     single_image_name = "bird.jpg"
     single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
 
+    # sweeping perform parameter sweeping through sampling
+    # pre specify parameter combo for running mode
+    mode = "running"
+
+    running_project_name = "formal run1"
+
+    sweeping_project_name = "sweep1"
+
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
     metric = {
@@ -122,21 +131,21 @@ class sdimg2imgconfigs:
         {
             'guidance_strength' : {
                 'distribution' : 'normal',
-                'mu' : 40,
-                'sigma' : 25
+                'mu' : 30,
+                'sigma' : 5
             },
             'diffusion_strength' : {
                 'distribution' : 'normal',
-                'mu' : 0.4,
+                'mu' : 0.3,
                 'sigma' : 0.05
             },
         })
     
     # outputs
     outputdir = "./debug/" 
-    running_project_name = "attention guided sd"
+    
     sweepingdir = "./sweeping/"
-    sweeping_project_name = "sweep1"
+    
     sweeping_run_count = 50
     metricoutputdir = "./metrics/"
 

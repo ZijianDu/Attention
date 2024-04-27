@@ -65,14 +65,15 @@ class runner(sdimg2imgconfigs):
         self.sdconfigs = sdconfigs
     # function to run experiment through predefined parameters
     def run_sd_img2img(self, wandb, seed, config = None):
+        wandb.log({"seed" : seed})
         sample_image = torch.tensor(np.array(Image.open(sdconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
         prompt = "a high quality image"
         pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = sdconfigs.vit, vae=sdconfigs.vae, text_encoder=sdconfigs.text_encoder, 
                                                     tokenizer=sdconfigs.tokenizer, unet=sdconfigs.unet, scheduler=sdconfigs.ddpmscheduler,
                                                     safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False).to(device="cuda")
-        
+        # param: 0-vit 1-diffusion strength 2-guidance strength
         for i, param in enumerate(sdconfigs.all_params):
-            wandb.log({"diffusion strength" : param[1], "guidance strength" : param[0]})
+            wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
             output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
                 guidance_strength=param[2], vitfeature = ViTFeature(sdconfigs, sdconfigs.layer_idx[0], processor), 
                 prompt = prompt, image = sample_image, strength = param[1], num_inference_steps=sdconfigs.num_steps, 
@@ -120,7 +121,7 @@ class runner(sdimg2imgconfigs):
 if __name__ == "__main__":
     runner = runner(sdconfigs)
     # perform parameter sweeping procedure
-    if sdconfigs.mode == "sweepinng":
+    if sdconfigs.mode == "sweeping":
         wandb.login()
         sweep_id = wandb.sweep(sdconfigs.sweep_config, project = sdconfigs.sweeping_project_name)
         wandb.agent(sweep_id, runner.run_parameter_sweeping, count = sdconfigs.sweeping_run_count)
