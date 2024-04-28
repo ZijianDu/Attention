@@ -58,7 +58,8 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         vitfeature,
         prompt: Union[str, List[str]] = None,
         image: PipelineImageInput = None,
-        strength: float = 0.8,
+        diffusion_strength: float = 0.8,
+        guidance_range : float = 0.0, 
         num_inference_steps: Optional[int] = 50,
         timesteps: List[int] = None,
         guidance_scale: Optional[float] = 7.5,
@@ -178,7 +179,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         # 1. Check inputs. Raise error if not correct
         self.check_inputs(
             prompt,
-            strength,
+            diffusion_strength,
             callback_steps,
             negative_prompt,
             prompt_embeds,
@@ -238,7 +239,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
         # 5. set timesteps
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
-        timesteps, num_inference_steps = self.get_timesteps(num_inference_steps, strength, device)
+        timesteps, num_inference_steps = self.get_timesteps(num_inference_steps, diffusion_strength, device)
         latent_timestep = timesteps[:1].repeat(batch_size * num_images_per_prompt)
 
         # 6. Prepare latent variables
@@ -307,9 +308,11 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                     noise_pred_uncond, noise_pred_text = noise_pred.chunk(2)
                     noise_pred = noise_pred_uncond + self.guidance_scale * (noise_pred_text - noise_pred_uncond)
 
+
+                guidance_range_max = int(guidance_range * 1000 * diffusion_strength)
                 # compute the previous noisy sample x_t -> x_t-1, iterative, schedule return xt
                 latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                guidance_strength, clean_img_vit_features, vitfeature, generator = generator, return_dict=False)[0]
+                guidance_strength, guidance_range_max, clean_img_vit_features, vitfeature, generator = generator, return_dict=False)[0]
 
                 """try:
                     torch.cuda.memory._dump_snapshot("memory.pickle")

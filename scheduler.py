@@ -40,6 +40,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         vit_input_mean: torch.Tensor,
         vit_input_std: torch.Tensor,
         guidance_strength: float, 
+        guidance_range_max : int, 
         clean_img_vit_feature, 
         vitfeature,
         generator=None,
@@ -92,7 +93,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         #debugger.log({"alpha_prod_t": alpha_prod_t})
         #debugger.log({"beta_prod_t": beta_prod_t})
 
-
         # 2. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
 
@@ -109,6 +109,9 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             # this is needed to calculate vit feature for guidance
             # obtain image space prediction by decoding predicted x0
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            
+            # clamp image range
+            torch.clamp(images, min = 0.0, max = 1.0)
           
             vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
           
@@ -119,19 +122,21 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
           
             # MSE between latent vit features and clean image features as guidance
             curr_loss = loss(latent_vit_features, clean_img_vit_feature)
-            guidance = torch.sum(curr_loss)
             debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
           
             # calculate gradient
-            gradient = torch.autograd.grad(guidance, [sample_])[0]
+            gradient = torch.autograd.grad(curr_loss, [sample_])[0]
             #debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
            
             # calculate actual guidance and add to xt
+            
+            #actual_guidance = torch.tensor(0.0).cuda()
+            #f timestep <= guidance_range_max:
             actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
+            
             sample_ = sample_ - actual_guidance
             debugger.log({"actual guidance":actual_guidance.detach().cpu().numpy(), "xt with guidance": sample_.detach().cpu().numpy()})
-       
-
+    
         # 3. Clip or threshold "predicted x_0"
         if self.config.thresholding:
             pred_original_sample = self._threshold_sample(pred_original_sample)

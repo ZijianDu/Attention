@@ -49,15 +49,15 @@ from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
 @dataclass
 class sdimg2imgconfigs:
     ## model related
-    model_path = 'facebook/dinov2-large'
+    model_path = 'facebook/dinov2-base'
     link = "runwayml/stable-diffusion-v1-5"
     tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
     processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
     size = [processor.crop_size["height"], processor.crop_size["width"]]
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
-    vit = Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype = torch.float16)
-    vits = [Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype = torch.float16)]
+    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
+    vits = [Dinov2ModelwOutput.from_pretrained('facebook/dinov2-base', torch_dtype = torch.float16)]
 #            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-small', torch_dtype = torch.float16),
  #            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype=torch.float16)]
     
@@ -68,12 +68,17 @@ class sdimg2imgconfigs:
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
     # model parameters
     # coefficient before guidance
-    guidance_strength = [0, 10, 20, 26, 28, 30, 32, 34, 36, 40]
+    guidance_strength = [0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0]
+    #, 20, 26, 28, 30, 32, 34, 36, 40]
+
+    # select the range of reverse diffusion process when guidance is actually applied
+    guidance_range = 0.7
   
     # percentage iterations to add noise before denoising, higher means more noise added
-    diffusion_strength = [0.27, 0.28, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
+    diffusion_strength = [0.6]
+                          #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
     # total 24 layers
-    layer_idx = [0]
+    layer_idx = [10]
     all_params = []
     for vitidx in range(len(vits)):
         for s in diffusion_strength:
@@ -81,8 +86,6 @@ class sdimg2imgconfigs:
                 all_params.append([vitidx, s, g])
     assert len(all_params) == len(vits) * len(diffusion_strength) * len(guidance_strength) 
     
-    # number of total iterations, 1000 is maximum
-    num_steps = 500
     num_tokens = 256
     image_size = 224
     improcessor = AutoImageProcessor.from_pretrained(model_path)
@@ -90,7 +93,7 @@ class sdimg2imgconfigs:
     imageH, imageW = 224, 224
     
     # total 16 heads
-    num_heads = 16
+    num_heads = 12
     head_idx = [i for i in range(num_heads)]
 
     # choose which feature to look, q: 0 k: 1 v: 2
@@ -113,9 +116,9 @@ class sdimg2imgconfigs:
     # pre specify parameter combo for running mode
     mode = "running"
 
-    running_project_name = "formal run1"
+    running_project_name = "lpips with finer guidance range"
 
-    sweeping_project_name = "sweep1"
+    sweeping_project_name = "test sweep 2"
 
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
@@ -130,23 +133,31 @@ class sdimg2imgconfigs:
     parameters_dict.update(
         {
             'guidance_strength' : {
-                'distribution' : 'normal',
-                'mu' : 30,
-                'sigma' : 5
+                'values' : 0
+                #'distribution' : 'normal',
+                #'mu' : 5,
+                #'sigma' : 3
             },
             'diffusion_strength' : {
                 'distribution' : 'normal',
-                'mu' : 0.3,
-                'sigma' : 0.05
+                'mu' : 0.2,
+                'sigma' : 0.03
+            },
+            'layer_idx' : {
+                'values' : [0, 11]
             },
         })
+    
+    # number of total iterations, 1000 is maximum, works when the mode is "running"
+    num_steps = 500
+    # number of random sampling for sweeping
+    sweeping_run_count = 200
     
     # outputs
     outputdir = "./debug/" 
     
     sweepingdir = "./sweeping/"
-    
-    sweeping_run_count = 50
+
     metricoutputdir = "./metrics/"
 
     # visualization related
