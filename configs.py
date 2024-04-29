@@ -45,7 +45,6 @@ from torchvision.transforms import Resize
 from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
 
 
-# needs cleaning
 @dataclass
 class sdimg2imgconfigs:
     ## model related
@@ -61,21 +60,21 @@ class sdimg2imgconfigs:
 #            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-small', torch_dtype = torch.float16),
  #            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype=torch.float16)]
     
-    prompt = "a high-quality image"
+    prompt = "a high-quality image of a bird"
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
     text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
     ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
     # model parameters
     # coefficient before guidance
-    guidance_strength = [0, 0.3, 0.6, 0.9, 1.2, 1.5, 1.8, 2.1, 2.4, 2.7, 3.0]
+    guidance_strength = [30]
     #, 20, 26, 28, 30, 32, 34, 36, 40]
 
     # select the range of reverse diffusion process when guidance is actually applied
     guidance_range = 0.7
   
     # percentage iterations to add noise before denoising, higher means more noise added
-    diffusion_strength = [0.6]
+    diffusion_strength = [0.56]
                           #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
     # total 24 layers
     layer_idx = [10]
@@ -92,9 +91,10 @@ class sdimg2imgconfigs:
     vitscheduler = ViTScheduler()
     imageH, imageW = 224, 224
     
-    # total 16 heads
+    # total 12 heads
     num_heads = 12
-    head_idx = [i for i in range(num_heads)]
+    all_selected_heads = [[1], [2], [3, 4]]
+    current_selected_heads = all_selected_heads[0]
 
     # choose which feature to look, q: 0 k: 1 v: 2
     qkv_choice = 1
@@ -103,20 +103,17 @@ class sdimg2imgconfigs:
     # 64 total qkv channels
     attention_channels = 64
     batch_size = 1
-    ## -1 means ignore no head, all heads are used for guidance
-    ignoreheadidx = -1
     
     # data related
     # read single image
     base_folder = "/home/leo/Documents/GenAI-Vision/attention/"
     single_image_name = "bird.jpg"
     single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
-
     # sweeping perform parameter sweeping through sampling
     # pre specify parameter combo for running mode
     mode = "running"
 
-    running_project_name = "lpips with finer guidance range"
+    running_project_name = "single head guidance test"
 
     sweeping_project_name = "test sweep 2"
 
@@ -127,7 +124,7 @@ class sdimg2imgconfigs:
             'goal' : 'maximize'
             }
     sweep_config['metric'] = metric
-    parameters_dict =  { }
+    parameters_dict =  {}
     sweep_config['parameters'] = parameters_dict
     
     parameters_dict.update(
@@ -149,7 +146,7 @@ class sdimg2imgconfigs:
         })
     
     # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 500
+    num_steps = 20
     # number of random sampling for sweeping
     sweeping_run_count = 200
     

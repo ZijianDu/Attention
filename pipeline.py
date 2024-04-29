@@ -55,7 +55,9 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         vit_input_mean, 
         vit_input_std,
         guidance_strength, 
+        all_original_vit_features, 
         vitfeature,
+        configs,
         prompt: Union[str, List[str]] = None,
         image: PipelineImageInput = None,
         diffusion_strength: float = 0.8,
@@ -274,12 +276,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         # 8. Denoising loop
         num_warmup_steps = len(timesteps) - num_inference_steps * self.scheduler.order
         self._num_timesteps = len(timesteps)
-
-        # obtain the qkv feature of the clean image
-        vitfeature.read_one_image()
-        vitfeature.extract_image_ViT_features()
-        # vit feature of the original clean image, calculate once per image
-        clean_img_vit_features = vitfeature._get_feature_qkv(True)
         
         #print("initializing memory profiling")
         #torch.cuda.memory._record_memory_history(max_entries=MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT)
@@ -312,7 +308,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                 guidance_range_max = int(guidance_range * 1000 * diffusion_strength)
                 # compute the previous noisy sample x_t -> x_t-1, iterative, schedule return xt
                 latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                guidance_strength, guidance_range_max, clean_img_vit_features, vitfeature, generator = generator, return_dict=False)[0]
+                guidance_strength, guidance_range_max, all_original_vit_features, vitfeature, configs, generator = generator, return_dict=False)[0]
 
                 """try:
                     torch.cuda.memory._dump_snapshot("memory.pickle")

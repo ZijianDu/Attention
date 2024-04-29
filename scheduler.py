@@ -41,8 +41,9 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         vit_input_std: torch.Tensor,
         guidance_strength: float, 
         guidance_range_max : int, 
-        clean_img_vit_feature, 
+        all_original_vit_features, 
         vitfeature,
+        configs, 
         generator=None,
         return_dict: bool = True,
     ):
@@ -115,34 +116,41 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
           
             vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
           
-            vitfeature.extract_latent_ViT_features(vit_input)
+            vitfeature.extract_selected_latent_vit_features(vit_input)
+
             # false if we are not getting original image feature
-            latent_vit_features = vitfeature._get_feature_qkv(isoriginal = False)
+            latent_vit_features = vitfeature.get_selected_latent_vit_features()
             debugger.log({"latent vit feature" : latent_vit_features})
-          
+
+            indices = torch.tensor(configs.current_selected_heads).cuda()
+            selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices)          
+            
+            assert selected_original_vit_features.shape == (1, len(configs.current_selected_heads),
+                                                            configs.num_patches**2, configs.attention_channels)
+            assert selected_original_vit_features.shape == latent_vit_features.shape
+
             # MSE between latent vit features and clean image features as guidance
-            curr_loss = loss(latent_vit_features, clean_img_vit_feature)
+            curr_loss = loss(latent_vit_features, selected_original_vit_features)
             debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
-          
+            if sample_.dtype == torch.float32:
+                sample_.data = sample_.data.to(curr_loss.dtype)
             # calculate gradient
             gradient = torch.autograd.grad(curr_loss, [sample_])[0]
             #debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
-           
             # calculate actual guidance and add to xt
-            
             #actual_guidance = torch.tensor(0.0).cuda()
-            #f timestep <= guidance_range_max:
+            #timestep <= guidance_range_max:
             actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
             
             sample_ = sample_ - actual_guidance
-            debugger.log({"actual guidance":actual_guidance.detach().cpu().numpy(), "xt with guidance": sample_.detach().cpu().numpy()})
+            debugger.log({"actual guidance" : actual_guidance.detach().cpu().numpy(), "xt with guidance" : sample_.detach().cpu().numpy()})
     
         # 3. Clip or threshold "predicted x_0"
         if self.config.thresholding:
             pred_original_sample = self._threshold_sample(pred_original_sample)
         elif self.config.clip_sample:
             pred_original_sample = pred_original_sample.clamp(
-                -self.config.clip_sample_range, self.config.clip_sample_range
+                - self.config.clip_sample_range, self.config.clip_sample_range
             )
 
         # 4. Compute coefficients for pred_original_sample x_0 and current sample x_t

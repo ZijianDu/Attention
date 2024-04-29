@@ -80,30 +80,41 @@ class runner(sdimg2imgconfigs):
     # function to run experiment through predefined parameters
     def run_sd_img2img(self, wandb, seed, config = None):
         wandb.log({"seed" : seed})
-        sample_image = torch.tensor(np.array(Image.open(sdconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
+        # sample image used to prepare for diffusion
+        sample_image = torch.tensor(np.array(Image.open(sdconfigs.base_folder + sdconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
         prompt = "a high quality image"
         pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = sdconfigs.vit, vae=sdconfigs.vae, text_encoder=sdconfigs.text_encoder, 
                                                     tokenizer=sdconfigs.tokenizer, unet=sdconfigs.unet, scheduler=sdconfigs.ddpmscheduler,
                                                     safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False).to(device="cuda")
+        
+        original_image_vitfeature = ViTFeature(sdconfigs, processor)
+        original_image_vitfeature.read_one_image()
+        original_image_vitfeature.extract_all_original_vit_features()
+        original_vit_features = original_image_vitfeature.get_all_original_vit_features()
+
         # param: 0-vit 1-diffusion strength 2-guidance strength
         for i, param in enumerate(sdconfigs.all_params):
             wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
-            output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
-                guidance_strength=param[2], vitfeature = ViTFeature(sdconfigs, sdconfigs.layer_idx[0], processor), 
-                prompt = prompt, image = sample_image, diffusion_strength = param[1], guidance_range = sdconfigs.guidance_range, 
-                num_inference_steps=sdconfigs.num_steps, generator = torch.Generator(device="cuda").manual_seed(seed), debugger = wandb, return_dict= False)
-            
-            img_predicted = torch.tensor(np.array(output[0][0])).permute(2, 0, 1).unsqueeze(0)
-            img_noprocess = Image.open(sdconfigs.base_folder + sdconfigs.single_image_name)
-            resized_original_image = transforms(img_noprocess).unsqueeze(0)
-            curr_ssim = ssim(img_predicted, resized_original_image).data
-            #wandb.log({"ssim" : curr_ssim.cpu().numpy()})
-            lpips_normed_predicted_img = img_predicted / 255.0 - 0.5
-            lpips_normed_original_img = resized_original_image / 255.0 - 0.5
-            loss_fn_alex, loss_fn_vgg = lpips.LPIPS(net = 'alex'), lpips.LPIPS(net = 'vgg')
-            dist_alex, dist_vgg = loss_fn_alex(lpips_normed_predicted_img, lpips_normed_original_img), loss_fn_vgg(img_predicted, resized_original_image)
-            wandb.log({"dist_alex" : dist_alex.detach().numpy(), "dist_vgg" : dist_vgg.detach().numpy()})
-            wandb.log({"predicted image" : wandb.Image(img_predicted)})
+            for selected_heads in sdconfigs.all_selected_heads:
+                sdconfigs.current_selected_heads = selected_heads
+                wandb.log({"selected heads" : selected_heads})
+                latent_vit_features = ViTFeature(sdconfigs, processor)
+                output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
+                    guidance_strength=param[2], all_original_vit_features = original_vit_features, vitfeature = latent_vit_features,  
+                    configs = sdconfigs, prompt = prompt, image = sample_image, diffusion_strength = param[1], guidance_range = sdconfigs.guidance_range, 
+                    num_inference_steps = sdconfigs.num_steps, generator = torch.Generator(device="cuda").manual_seed(seed), debugger = wandb, return_dict= False)
+                
+                img_predicted = torch.tensor(np.array(output[0][0])).permute(2, 0, 1).unsqueeze(0)
+                img_noprocess = Image.open(sdconfigs.base_folder + sdconfigs.single_image_name)
+                resized_original_image = transforms(img_noprocess).unsqueeze(0)
+                curr_ssim = ssim(img_predicted, resized_original_image).data
+                #wandb.log({"ssim" : curr_ssim.cpu().numpy()})
+                lpips_normed_predicted_img = img_predicted / 255.0 - 0.5
+                lpips_normed_original_img = resized_original_image / 255.0 - 0.5
+                loss_fn_alex, loss_fn_vgg = lpips.LPIPS(net = 'alex'), lpips.LPIPS(net = 'vgg')
+                dist_alex, dist_vgg = loss_fn_alex(lpips_normed_predicted_img, lpips_normed_original_img), loss_fn_vgg(img_predicted, resized_original_image)
+                wandb.log({"dist_alex" : dist_alex.detach().numpy(), "dist_vgg" : dist_vgg.detach().numpy()})
+                wandb.log({"predicted image" : wandb.Image(img_predicted)})
             #image_arr = torch.tensor(img_np).type(torch.uint8).numpy()
             
             #img_pil = Image.fromarray(img_np)
@@ -113,13 +124,10 @@ class runner(sdimg2imgconfigs):
             #img_pil.save(sdconfigs.outputdir + "seed" + str(seed) + "/" + image_name)
             #image = np.array(sdconfigs.improcessor(img_pil))
             #image = sdconfigs.improcessor(Image.open(sdconfigs.outputdir + "seed" + str(seed) + "/" + image_name))["pixel_values"][0]
-            
-            
             """            
             print("processed predicted image: ", image.shape, np.mean(image), np.std(image))
             print("original reference image: ", img_noprocess.shape, np.mean(img_noprocess), np.std(img_noprocess))
             print("processed reference image: ", sdconfigs.single_image.shape, np.mean(sdconfigs.single_image.shape), np.std(sdconfigs.single_image.shape)
-            
             """
 
     # function to run sweeping using configs defined by wandb.config dict
@@ -164,7 +172,7 @@ if __name__ == "__main__":
     # perform normal run given preselected parameters
     if sdconfigs.mode == "running":  
         wandb.login()
-        for seed in range(10, 15, 1):
+        for seed in range(65, 70, 1):
             wandb.init(project = sdconfigs.running_project_name, name = "run: " + str(seed))
             runner.run_sd_img2img(wandb, seed)
             wandb.finish()
