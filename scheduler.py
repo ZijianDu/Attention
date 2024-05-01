@@ -119,7 +119,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             vitfeature.extract_selected_latent_vit_features(vit_input)
 
             # false if we are not getting original image feature
-            latent_vit_features = vitfeature.get_selected_latent_vit_features()
+            latent_vit_features = vitfeature.get_selected_latent_vit_features().to(torch.float16)
             debugger.log({"latent vit feature" : latent_vit_features})
 
             indices = torch.tensor(configs.current_selected_heads).cuda()
@@ -132,8 +132,8 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             # MSE between latent vit features and clean image features as guidance
             curr_loss = loss(latent_vit_features, selected_original_vit_features)
             debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
-            if sample_.dtype == torch.float32:
-                sample_.data = sample_.data.to(curr_loss.dtype)
+
+            sample_.data = sample_.data.to(curr_loss.dtype)
             # calculate gradient
             gradient = torch.autograd.grad(curr_loss, [sample_])[0]
             #debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})

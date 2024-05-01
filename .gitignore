@@ -4,3 +4,6 @@
 *.pyc
 *.txt
 wandb/
+debug/
+__pycache__/
+sweeping/

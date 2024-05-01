@@ -93,7 +93,8 @@ class sdimg2imgconfigs:
     
     # total 12 heads
     num_heads = 12
-    all_selected_heads = [[1], [2], [3, 4]]
+    all_selected_heads = [[i for i in range(12)], [0], [1], [2], [3], [4], [5], [6], 
+                          [7], [8], [9], [10], [11]]
     current_selected_heads = all_selected_heads[0]
 
     # choose which feature to look, q: 0 k: 1 v: 2
@@ -111,17 +112,17 @@ class sdimg2imgconfigs:
     single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
     # sweeping perform parameter sweeping through sampling
     # pre specify parameter combo for running mode
-    mode = "running"
+    mode = "sweeping"
 
-    running_project_name = "single head guidance test"
+    running_project_name = "correct implementation single head guided sd test"
 
-    sweeping_project_name = "test sweep 2"
+    sweeping_project_name = "test sweep runs 4-29"
 
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
     metric = {
-            'name' : 'ssim',
-            'goal' : 'maximize'
+            'name' : 'dist_vgg',
+            'goal' : 'minimize'
             }
     sweep_config['metric'] = metric
     parameters_dict =  {}
@@ -130,23 +131,19 @@ class sdimg2imgconfigs:
     parameters_dict.update(
         {
             'guidance_strength' : {
-                'values' : 0
-                #'distribution' : 'normal',
-                #'mu' : 5,
-                #'sigma' : 3
+                'distribution' : 'normal',
+                'mu' : 5,
+                'sigma' : 3
             },
             'diffusion_strength' : {
                 'distribution' : 'normal',
-                'mu' : 0.2,
+                'mu' : 0.55,
                 'sigma' : 0.03
-            },
-            'layer_idx' : {
-                'values' : [0, 11]
             },
         })
     
     # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 20
+    num_steps = 500
     # number of random sampling for sweeping
     sweeping_run_count = 200
     
