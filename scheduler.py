@@ -40,7 +40,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         vit_input_mean: torch.Tensor,
         vit_input_std: torch.Tensor,
         guidance_strength: float, 
-        guidance_range_max : int, 
         all_original_vit_features, 
         vitfeature,
         configs, 

@@ -42,7 +42,7 @@ from processor import processor
 from skimage.transform import resize
 import torchvision.transforms as transforms 
 from torchvision.transforms import Resize
-from vit_visualization import ViTFeature, ViTPipe, ViTScheduler
+from attention.vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
 
 
 @dataclass
@@ -156,3 +156,9 @@ class sdimg2imgconfigs:
 
     # visualization related
     dpi = 300
+
+
+# configs to be used for SDXLTurboImg2Img pipeline
+@dataclass
+class sdxlimg2imgconfigs:
+    pass

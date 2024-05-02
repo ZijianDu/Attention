@@ -7,3 +7,5 @@ wandb/
 debug/
 __pycache__/
 sweeping/
+DOODL/
+PerceptualSimilarity/

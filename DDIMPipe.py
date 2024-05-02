@@ -14,13 +14,13 @@ import torch
 from transformers.models.clip import CLIPTextModel
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from Attention.visualizer import visualizer
+from attention.visualizer import visualizer
 import shutil
 from processor import processor
 from scheduler import DDIMSchedulerWithViT
 from pipeline import StableDiffusionPipelineWithViT
 from skimage.transform import resize
-from Attention.visualizer import HeatMap
+from attention.visualizer import HeatMap
 
 class configs:
     def __init__(self):

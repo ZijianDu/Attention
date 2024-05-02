@@ -58,7 +58,6 @@ class Dinov2SelfAttentionwOutput(Dinov2SelfAttention):
         self.query = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
         self.key = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
         self.value = nn.Linear(config.hidden_size, self.all_head_size, bias=config.qkv_bias)
- 
         ## add class member to directly access q, k, v
         self.key_layer = None
         self.mixed_query_layer = None
@@ -101,15 +100,13 @@ class Dinov2SelfAttentionwOutput(Dinov2SelfAttention):
         outputs = (context_layer, attention_probs, attention_scores) if output_attentions else (context_layer,)
 
         return outputs
-
-
+    
 class Dinov2AttentionwOutput(Dinov2Attention):
     def __init__(self, config: Dinov2Config) -> None:
         super().__init__(config)
         self.attention = Dinov2SelfAttentionwOutput(config)
         self.output = Dinov2SelfOutput(config)
         self.pruned_heads = set()
-
 
 class Dinov2LayerwOutput(Dinov2Layer):
     def __init__(self, config: Dinov2Config) -> None:
