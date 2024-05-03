@@ -104,7 +104,7 @@ class processor():
 
 
 
-class visualizer():
+class visualizer:
     def __init__(self):
         self.figsize = (15, 15)
         self.dpi = 200
@@ -217,8 +217,6 @@ class configs:
         self.seed = 20
         self.vit = Dinov2Model.from_pretrained(self.model_path)
         self.outputdir = "./visualize_attentions/"
-        self.imagedir = "./imagenet/imagenet_images/"
-        self.imageclass = os.listdir(self.imagedir)
         self.heads = [0, 5, 10, 15]
         self.layers = [0, 5, 10, 15]
 

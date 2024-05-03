@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-#import torchvision.utility as tvu
 from PIL import Image
 import tqdm
 from typing import Dict, List, Optional, Tuple, Union, Any, Callable
@@ -39,16 +38,13 @@ from torchvision.transforms.functional import resize
 from dinov2 import Dinov2ModelwOutput
 import requests
 import torch.nn.functional as F
-from visualizer import visualizer, HeatMap
 import shutil
-from processor import processor
 from skimage.transform import resize
 import torchvision.transforms as transforms
 from torchvision.transforms import Resize
-from attention.vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
-from configs import sdimg2imgconfigs
+from vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
+from configs import sdimg2imgconfigs, sdxlimg2imgconfigs
 import os
-from evaluate import evaluator
 from scheduler import _preprocess_vit_input
 from pytorch_ssim import ssim
 import wandb
@@ -60,7 +56,7 @@ warnings.filterwarnings("ignore")
 
 # configs needed for vit and SDimg2img
 sdconfigs = sdimg2imgconfigs()
-visualizer, processor = visualizer(), processor()
+sdxlconfigs = sdxlimg2imgconfigs()
 
 from torchvision.transforms import v2
 transforms = v2.Compose([
@@ -86,31 +82,32 @@ class runner(sdimg2imgconfigs):
         #                                            tokenizer=sdconfigs.tokenizer, unet=sdconfigs.unet, scheduler=sdconfigs.ddpmscheduler,
         #                                            safety_checker=None, feature_extractor=None, image_encoder=None, requires_safety_checker=False).to(device="cuda")
         
-        pipe = StableDiffusionXLImg2ImgPipelineWithViTGuidance(vit = sdconfigs.vit, vae = sdconfigs.vae, text_encoder = sdconfigs.text_encoder, tokenizer=sdconfigs.tokenizer, unet=sdconfigs.unet, scheduler=sdconfigs.ddpmscheduler,
-                                  feature_extractor=None, requires_aesthetics_score= False, force_zeros_for_empty_prompt=True, add_watermarker=None)
+        pipe = StableDiffusionXLImg2ImgPipelineWithViTGuidance(vit = sdxlconfigs.vit, vae = sdxlconfigs.vae, text_encoder = sdxlconfigs.text_encoder, 
+                text_encoder_2 = sdxlconfigs.text_encoder_2, tokenizer=sdxlconfigs.tokenizer, tokenizer_2 = sdxlconfigs.tokenizer_2, unet=sdxlconfigs.unet, 
+                scheduler=sdxlconfigs.ddpmscheduler, image_encoder = None, feature_extractor=None, requires_aesthetics_score= False, force_zeros_for_empty_prompt=True, add_watermarker=False)
                                                             
-        original_image_vitfeature = ViTFeature(sdconfigs, processor)
+        original_image_vitfeature = ViTFeature(sdxlconfigs)
         original_image_vitfeature.read_one_image()
         original_image_vitfeature.extract_all_original_vit_features()
         original_vit_features = original_image_vitfeature.get_all_original_vit_features()
 
         # param: 0-vit 1-diffusion strength 2-guidance strength
-        for i, param in enumerate(sdconfigs.all_params):
+        for i, param in enumerate(sdxlconfigs.all_params):
             #wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
             for selected_heads in sdconfigs.all_selected_heads:
                 sdconfigs.current_selected_heads = selected_heads
                 wandb.log({"selected heads" : str(selected_heads)})
-                latent_vit_features = ViTFeature(sdconfigs, processor)
+                latent_vit_features = ViTFeature(sdxlconfigs)
 
                 #output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
                 #    guidance_strength=param[2], all_original_vit_features = original_vit_features, vitfeature = latent_vit_features,  
                 #    configs = sdconfigs, prompt = prompt, image = sample_image, diffusion_strength = param[1], 
                 #    num_inference_steps = sdconfigs.num_steps, generator = torch.Generator(device="cuda").manual_seed(seed), debugger = wandb, return_dict= False)
                 
-                output = pipe(vit_input_size=sdconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
-                        guidance_strength=param[2], all_original_vit_features = original_vit_features, vitfeature = latent_vit_features,  
-                        configs = sdconfigs, debugger = wandb, prompt = prompt, image = sample_image, diffusion_strength = param[1], 
-                        num_inference_steps = sdconfigs.num_steps, generator = torch.Generator(device="cuda").manual_seed(seed), return_dict= False)
+                output = pipe(vit_input_size=sdxlconfigs.size, vit_input_mean=sdconfigs.mean, vit_input_std=sdconfigs.std, 
+                        guidance_strength=param[1], all_original_vit_features = original_vit_features, vitfeature = latent_vit_features,  
+                        configs = sdxlconfigs, debugger = wandb, prompt = prompt, image = sample_image, strength = param[0], 
+                        num_inference_steps = sdxlconfigs.num_steps, generator = torch.Generator(device="cuda").manual_seed(seed), return_dict= False)
                 
                 img_predicted = torch.tensor(np.array(output[0][0])).permute(2, 0, 1).unsqueeze(0)
                 img_noprocess = Image.open(sdconfigs.base_folder + sdconfigs.single_image_name)
@@ -162,16 +159,16 @@ class runner(sdimg2imgconfigs):
 if __name__ == "__main__":
     runner = runner(sdconfigs)
     # perform parameter sweeping procedure
-    if sdconfigs.mode == "sweeping":
+    if sdxlconfigs.mode == "sweeping":
         wandb.login()
         sweep_id = wandb.sweep(sdconfigs.sweep_config, project = sdconfigs.sweeping_project_name)
         wandb.agent(sweep_id, runner.run_parameter_sweeping, count = sdconfigs.sweeping_run_count)
     
     # perform normal run given preselected parameters
-    if sdconfigs.mode == "running":  
+    if sdxlconfigs.mode == "running":  
         wandb.login()
         for seed in range(65, 70, 1):
-            wandb.init(project = sdconfigs.running_project_name, name = "run: " + str(seed))
+            wandb.init(project = sdxlconfigs.running_project_name, name = "run: " + str(seed))
             runner.run_sd_img2img(wandb, seed)
             wandb.finish()
     

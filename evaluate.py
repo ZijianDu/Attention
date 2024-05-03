@@ -5,7 +5,7 @@ from configs import sdimg2imgconfigs
 from PIL import Image
 from collections import defaultdict
 import numpy as np
-from visualizer import visualizer
+from util import visualizer
 
 class evaluator(sdimg2imgconfigs, visualizer):
     # run this function after each seed

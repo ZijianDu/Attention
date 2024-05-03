@@ -1,1 +1,4 @@
-use SSIM across runs as diagnosis tool
+pivot from DOODL to sdxl turbo pipeline for better approximation of x0 in order to study
+vit guidance
+
+1. update pipe interface, try if ddpmschedule with guidance work as scheduler

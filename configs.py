@@ -36,13 +36,12 @@ from dinov2 import Dinov2ModelwOutput
 import numpy as np
 import torch
 import torch.nn.functional as F
-from visualizer import visualizer, HeatMap
 import shutil
-from processor import processor
 from skimage.transform import resize
 import torchvision.transforms as transforms 
+from transformers import AutoTokenizer, CLIPTextModelWithProjection
 from torchvision.transforms import Resize
-from attention.vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
+from vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
 
 
 @dataclass
@@ -161,4 +160,117 @@ class sdimg2imgconfigs:
 # configs to be used for SDXLTurboImg2Img pipeline
 @dataclass
 class sdxlimg2imgconfigs:
-    pass
+    ## model related
+    model_path = 'facebook/dinov2-base'
+    link = "stabilityai/sdxl-turbo"
+    
+    tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+    tokenizer_2 = tokenizer
+    
+    processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
+    size = [processor.crop_size["height"], processor.crop_size["width"]]
+    mean, std = processor.image_mean, processor.image_std
+    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
+    
+    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
+    
+    prompt = "a high-quality image"
+    
+    vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
+    
+    text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+    text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
+    
+    unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
+    ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
+    # model parameters
+    # coefficient before guidance
+    guidance_strength = [30]
+    #, 20, 26, 28, 30, 32, 34, 36, 40]
+
+    # select the range of reverse diffusion process when guidance is actually applied
+    guidance_range = 0.7
+  
+    # percentage iterations to add noise before denoising, higher means more noise added
+    diffusion_strength = [0.56]
+                          #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
+    # total 24 layers
+    layer_idx = [10]
+    all_params = []
+
+    for s in diffusion_strength:
+        for g in guidance_strength:
+            all_params.append([s, g])
+    assert len(all_params) == len(diffusion_strength) * len(guidance_strength) 
+    
+    num_tokens = 256
+    image_size = 224
+    improcessor = AutoImageProcessor.from_pretrained(model_path)
+    vitscheduler = ViTScheduler()
+    imageH, imageW = 224, 224
+    
+    # total 12 heads
+    num_heads = 12
+    all_selected_heads = [[i for i in range(12)], [0], [1], [2], [3], [4], [5], [6], 
+                          [7], [8], [9], [10], [11]]
+    current_selected_heads = all_selected_heads[0]
+
+    # choose which feature to look, q: 0 k: 1 v: 2
+    qkv_choice = 1
+    # Vit has image patch 16x16
+    num_patches = 16
+    # 64 total qkv channels
+    attention_channels = 64
+    batch_size = 1
+    
+    # data related
+    # read single image
+    base_folder = "/home/leo/Documents/GenAI-Vision/attention/"
+    single_image_name = "bird.jpg"
+    single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
+    # sweeping perform parameter sweeping through sampling
+    # pre specify parameter combo for running mode
+    mode = "running"
+
+    running_project_name = "test sdxl run"
+
+    sweeping_project_name = "test sweep runs 4-29"
+
+    #wandb configs for sweepinng parameters
+    sweep_config = {'method':'random'}
+    metric = {
+            'name' : 'dist_vgg',
+            'goal' : 'minimize'
+            }
+    sweep_config['metric'] = metric
+    parameters_dict =  {}
+    sweep_config['parameters'] = parameters_dict
+    
+    parameters_dict.update(
+        {
+            'guidance_strength' : {
+                'distribution' : 'normal',
+                'mu' : 5,
+                'sigma' : 3
+            },
+            'diffusion_strength' : {
+                'distribution' : 'normal',
+                'mu' : 0.55,
+                'sigma' : 0.03
+            },
+        })
+    
+    # number of total iterations, 1000 is maximum, works when the mode is "running"
+    num_steps = 50
+    # number of random sampling for sweeping
+    sweeping_run_count = 200
+    
+    # outputs
+    outputdir = "./debug/" 
+    
+    sweepingdir = "./sweeping/"
+
+    metricoutputdir = "./metrics/"
+
+    # visualization related
+    dpi = 300

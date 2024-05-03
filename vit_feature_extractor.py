@@ -7,7 +7,7 @@ import requests
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from util import visualizer, processor, HeatMap
+from util import visualizer, HeatMap
 import shutil
 from skimage.transform import resize
 import torchvision.transforms as transforms 
@@ -31,9 +31,8 @@ class ViTScheduler():
         return vit.getkey()
     
 class ViTFeature:
-    def __init__(self, configs, processor):
+    def __init__(self, configs):
         self.configs = configs
-        self.processor = processor
         self.pipe = ViTPipe(vit = self.configs.vit, scheduler = self.configs.vitscheduler, torch_device = 'cuda')
         # data is direct input to ViT model, shape: batch, 3, 224, 224, preprocessing needed if 
         # original image is of different shape

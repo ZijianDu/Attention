@@ -8,8 +8,6 @@ import inspect
 from packaging import version
 import requests
 import os
-from processor import processor
-from visualizer import visualizer
 # import three base class pipelines to be extended
 from diffusers import (StableDiffusionPipeline, StableDiffusionImg2ImgPipeline, StableDiffusionXLImg2ImgPipeline)
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
@@ -606,7 +604,6 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
                 latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                
                 guidance_strength, all_original_vit_features, vitfeature, configs, generator = generator, return_dict=False)[0]
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():

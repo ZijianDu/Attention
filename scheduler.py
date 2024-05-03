@@ -3,14 +3,12 @@ from diffusers.utils.torch_utils import randn_tensor
 import torch
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
-from visualizer import visualizer
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 from torch.distributions import Categorical
 import numpy as np
 from dataclasses import dataclass
 from torch.nn import MSELoss
-visualizer = visualizer()
 
 def cal_entropy(p):
     return -1.0 * torch.sum(p * torch.log(p), dim = -1)
