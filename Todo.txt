@@ -1,4 +1,7 @@
 pivot from DOODL to sdxl turbo pipeline for better approximation of x0 in order to study
 vit guidance
 
-1. update pipe interface, try if ddpmschedule with guidance work as scheduler
+1. make sure modified DDIMscheduler is correct
+
+
+2. make sure SDXL pipeline is correct, way to easily change pipeline/scheduler without too much work?

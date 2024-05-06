@@ -22,7 +22,6 @@ def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Ten
     assert abs(torch.std(normalized).detach().cpu().numpy() - 1.0) < 0.001 
     return normalized     
 
-
 ## modified DDPM scheduler with guidance from ViT
 class DDPMSchedulerwithGuidance(DDPMScheduler):
     # modify step function s.t each predicted x0 is guided by Vit feature
@@ -184,25 +183,29 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
         return DDPMSchedulerOutput(prev_sample=pred_prev_sample, pred_original_sample=pred_original_sample)
 
-class DDIMSchedulerWithViT(DDIMScheduler):
-    def step(
-        self,
-        vit,
-        vae,
-        model_output: torch.FloatTensor,
-        timestep: int,
-        sample: torch.FloatTensor,
-        vit_input_size: list[int],
-        vit_input_mean: torch.Tensor,
-        vit_input_std: torch.Tensor,
-        layer_idx: int,
-        head_idx: int,
-        guidance_strength: float = 0.0,
-        eta: float = 0.0,
-        use_clipped_model_output: bool = False,
-        generator=None,
-        variance_noise: Optional[torch.FloatTensor] = None,
-        return_dict: bool = True,
+
+class DDIMSchedulerwithGuidance(DDIMScheduler):
+    def step(self, 
+             vit,
+             vae, 
+             debugger,
+             vit_input_size, 
+             vit_input_mean, 
+             vit_input_std,
+             guidance_strength, 
+             all_original_vit_features, 
+             vitfeature, 
+             configs, 
+             
+             # base class arguments
+             model_output,  
+             timestep,  
+             sample,
+             eta, 
+             use_clipped_model_output,
+             generator, 
+             variance_noise, 
+             return_dict=False
     ):
         """
 
@@ -216,7 +219,6 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             raise ValueError(
                 "Number of inference steps is 'None', you need to run 'set_timesteps' after creating the scheduler"
             )
-
         # See formulas (12) and (16) of DDIM paper https://arxiv.org/pdf/2010.02502.pdf
         # Ideally, read DDIM paper in-detail understanding
 
@@ -236,35 +238,63 @@ class DDIMSchedulerWithViT(DDIMScheduler):
         alpha_prod_t_prev = self.alphas_cumprod[prev_timestep] if prev_timestep >= 0 else self.final_alpha_cumprod
 
         beta_prod_t = 1 - alpha_prod_t
+        
+        # define loss function
+        loss = MSELoss()
 
         # 3. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (12) from https://arxiv.org/pdf/2010.02502.pdf
         if self.config.prediction_type == "epsilon":
-            sample = sample.clone().requires_grad_(True)
-            pred_original_sample = (sample - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+
+            sample_ = sample.clone().requires_grad_(True)
+            
+            # original code
+            pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+            
             # obtain image input to ViT
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
-            # images: Batchsize x 3 x 512 x 512
+            
+            # clamp image range
+            torch.clamp(images, min = 0.0, max = 1.0)
+          
             vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-            print("one time step, getting attention map from Vit ")
-            attentions = vit(layer_idx, head_idx, vit_input, output_attentions=True)
+          
+            vitfeature.extract_selected_latent_vit_features(vit_input)
 
-            oneiterationqkv = vit.getqkv()
+            latent_vit_features = vitfeature.get_selected_latent_vit_features().to(torch.float16)
+            
+            debugger.log({"latent vit feature" : latent_vit_features})
 
-            attention_scores = attentions.attentions
-            score_per_head = attention_scores[layer_idx][:, head_idx, 1:, 1:].squeeze()
-            all_token_entropy = cal_entropy(score_per_head)
-            mean_entropy = torch.mean(all_token_entropy)
-            gradient = torch.autograd.grad(mean_entropy, [sample])[0]
-            gradient = 0
-            pred_epsilon = model_output + guidance_strength * beta_prod_t ** 0.5 * gradient
+            indices = torch.tensor(configs.current_selected_heads).cuda()
+
+            selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices)          
+            
+            assert selected_original_vit_features.shape == (1, len(configs.current_selected_heads),
+                                                            configs.num_patches**2, configs.attention_channels)
+            assert selected_original_vit_features.shape == latent_vit_features.shape
+
+            # MSE between latent vit features and clean image features as guidance
+            curr_loss = loss(latent_vit_features, selected_original_vit_features)
+
+            debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
+
+            sample_.data = sample_.data.to(curr_loss.dtype)
+            
+            # calculate gradient
+            gradient = torch.autograd.grad(curr_loss, [sample_])[0]
+
+            actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
+
+            
+            # original code, no guidance
+            pred_epsilon = model_output - actual_guidance
 
         elif self.config.prediction_type == "sample":
             pred_original_sample = model_output
-            pred_epsilon = (sample - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
+            pred_epsilon = (sample_ - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
         elif self.config.prediction_type == "v_prediction":
-            pred_original_sample = (alpha_prod_t**0.5) * sample - (beta_prod_t**0.5) * model_output
-            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample
+            pred_original_sample = (alpha_prod_t**0.5) * sample_ - (beta_prod_t**0.5) * model_output
+            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample_
         else:
             raise ValueError(
                 f"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, `sample`, or"
@@ -310,31 +340,7 @@ class DDIMSchedulerWithViT(DDIMScheduler):
             prev_sample = prev_sample + variance
 
         if not return_dict:
-            attention_mean = score_per_head.detach()
-            entropy = mean_entropy,
-            images = images.detach()
-            return (prev_sample, attention_mean, entropy, images, oneiterationqkv)
+
+            return (prev_sample,)
 
         return DDIMSchedulerOutput(prev_sample=prev_sample, pred_original_sample=pred_original_sample)
-        
-
-
-
-"""# obselete:
-#visualizer.plot_attentionmap(score_per_head, timestep)
-#visualizer.plot_attentionmap(attention_scores)
-#entropy = Categorical(attention_prob).entropy()
-#print("\n")
-#print("length of attention scores: ")
-#print(len(attention_scores))
-#print("\n")
-#print("dimension of one attention layer: ")
-#print(attention_scores[0].shape)
-#print("\n")
-#print("value of attention scores for layer 0: ")
-#print(attention_scores[0])
-#assert layer_idx < len(attentions), f"{len(attentions):d} attentions in ViT, got {layer_idx:d}"
-#attention = attentions[layer_idx]
-#assert head_idx < attention.shape[1], f"{attention.shape[1]:d} heads in attention, got {head_idx:d}"
-#attention = F.softmax([:, :, 0, 1:], dim = 1)
-#attention_mean = attention.mean(dim=(-2, -1)).sum()"""

@@ -13,7 +13,7 @@ from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMixin, TextualInversionLoaderMixin
 from diffusers.models import AutoencoderKL, ImageProjection, UNet2DConditionModel
 from diffusers.models.lora import adjust_lora_scale_text_encoder
-from diffusers.schedulers import KarrasDiffusionSchedulers, DDPMScheduler
+from diffusers.schedulers import KarrasDiffusionSchedulers, DDPMScheduler, DDIMScheduler, EulerAncestralDiscreteScheduler
 from scheduler import DDPMSchedulerwithGuidance
 from diffusers import (StableDiffusionPipeline, StableDiffusionImg2ImgPipeline)
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
@@ -42,157 +42,77 @@ import torchvision.transforms as transforms
 from transformers import AutoTokenizer, CLIPTextModelWithProjection
 from torchvision.transforms import Resize
 from vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
-
+from pipeline import StableDiffusionImg2ImgPipelineWithSDEdit, StableDiffusionXLImg2ImgPipelineWithViTGuidance,  StableDiffusionXLPipelineWithViTGuidance
+from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
 
 @dataclass
-class sdimg2imgconfigs:
+class runconfigs:
     ## model related
-    model_path = 'facebook/dinov2-base'
-    link = "runwayml/stable-diffusion-v1-5"
-    tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-    processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
-    size = [processor.crop_size["height"], processor.crop_size["width"]]
-    mean, std = processor.image_mean, processor.image_std
-    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
-    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
-    vits = [Dinov2ModelwOutput.from_pretrained('facebook/dinov2-base', torch_dtype = torch.float16)]
-#            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-small', torch_dtype = torch.float16),
- #            Dinov2ModelwOutput.from_pretrained('facebook/dinov2-large', torch_dtype=torch.float16)]
-    
-    prompt = "a high-quality image of a bird"
-    vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
-    text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
-    unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
-    ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
-    # model parameters
-    # coefficient before guidance
-    guidance_strength = [30]
-    #, 20, 26, 28, 30, 32, 34, 36, 40]
-
-    # select the range of reverse diffusion process when guidance is actually applied
-    guidance_range = 0.7
-  
-    # percentage iterations to add noise before denoising, higher means more noise added
-    diffusion_strength = [0.56]
-                          #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
-    # total 24 layers
-    layer_idx = [10]
-    all_params = []
-    for vitidx in range(len(vits)):
-        for s in diffusion_strength:
-            for g in guidance_strength:
-                all_params.append([vitidx, s, g])
-    assert len(all_params) == len(vits) * len(diffusion_strength) * len(guidance_strength) 
-    
-    num_tokens = 256
-    image_size = 224
-    improcessor = AutoImageProcessor.from_pretrained(model_path)
-    vitscheduler = ViTScheduler()
-    imageH, imageW = 224, 224
-    
-    # total 12 heads
-    num_heads = 12
-    all_selected_heads = [[i for i in range(12)], [0], [1], [2], [3], [4], [5], [6], 
-                          [7], [8], [9], [10], [11]]
-    current_selected_heads = all_selected_heads[0]
-
-    # choose which feature to look, q: 0 k: 1 v: 2
-    qkv_choice = 1
-    # Vit has image patch 16x16
-    num_patches = 16
-    # 64 total qkv channels
-    attention_channels = 64
-    batch_size = 1
-    
-    # data related
-    # read single image
-    base_folder = "/home/leo/Documents/GenAI-Vision/attention/"
-    single_image_name = "bird.jpg"
-    single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
-    # sweeping perform parameter sweeping through sampling
-    # pre specify parameter combo for running mode
-    mode = "sweeping"
-
-    running_project_name = "correct implementation single head guided sd test"
-
-    sweeping_project_name = "test sweep runs 4-29"
-
-    #wandb configs for sweepinng parameters
-    sweep_config = {'method':'random'}
-    metric = {
-            'name' : 'dist_vgg',
-            'goal' : 'minimize'
-            }
-    sweep_config['metric'] = metric
-    parameters_dict =  {}
-    sweep_config['parameters'] = parameters_dict
-    
-    parameters_dict.update(
-        {
-            'guidance_strength' : {
-                'distribution' : 'normal',
-                'mu' : 5,
-                'sigma' : 3
-            },
-            'diffusion_strength' : {
-                'distribution' : 'normal',
-                'mu' : 0.55,
-                'sigma' : 0.03
-            },
-        })
-    
-    # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 500
-    # number of random sampling for sweeping
-    sweeping_run_count = 200
-    
-    # outputs
-    outputdir = "./debug/" 
-    
-    sweepingdir = "./sweeping/"
-
-    metricoutputdir = "./metrics/"
-
-    # visualization related
-    dpi = 300
-
-
-# configs to be used for SDXLTurboImg2Img pipeline
-@dataclass
-class sdxlimg2imgconfigs:
-    ## model related
+    prompt = "a high-quality image"
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
-    
-    tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-    tokenizer_2 = tokenizer
-    
-    processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
-    size = [processor.crop_size["height"], processor.crop_size["width"]]
-    mean, std = processor.image_mean, processor.image_std
-    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
-    
-    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
-    
-    prompt = "a high-quality image"
-    
+
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
-    
     text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
     text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
     
+    tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+    tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+    
+    processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
+    improcessor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
+    
+    size = [processor.crop_size["height"], processor.crop_size["width"]]
+    mean, std = processor.image_mean, processor.image_std
+    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
+    
+    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
+    
+    # use overridden schedulers
+    #ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
+    
+    ddimscheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler")
+
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
-    ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
+
+    stablediffusionxltext2imgpipewithvitguidance =  StableDiffusionXLPipelineWithViTGuidance(
+        vit = vit,
+        vae = vae,
+        text_encoder = text_encoder,
+        text_encoder_2 = text_encoder_2,
+        tokenizer = tokenizer,
+        tokenizer_2 = tokenizer_2,
+        unet = unet, 
+        scheduler = ddimscheduler,
+        image_encoder = None,
+        feature_extractor = None,
+        force_zeros_for_empty_prompt = True,
+        add_watermarker = None)
+    
+    stablediffusionxlimg2imgpipewithvitguidance = StableDiffusionXLImg2ImgPipelineWithViTGuidance(
+        vit = vit, 
+        vae = vae, 
+        text_encoder = text_encoder, 
+        text_encoder_2 = text_encoder_2, 
+        tokenizer=tokenizer, 
+        tokenizer_2 = tokenizer_2, 
+        unet=unet, 
+        scheduler=DDIMSchedulerwithGuidance, 
+        image_encoder = None, 
+        feature_extractor=None, 
+        requires_aesthetics_score= False, 
+        force_zeros_for_empty_prompt=True, 
+        add_watermarker=None)
+    
     # model parameters
-    # coefficient before guidance
-    guidance_strength = [30]
+    guidance_strength = [1]
     #, 20, 26, 28, 30, 32, 34, 36, 40]
 
     # select the range of reverse diffusion process when guidance is actually applied
     guidance_range = 0.7
   
     # percentage iterations to add noise before denoising, higher means more noise added
-    diffusion_strength = [0.56]
+    diffusion_strength = [0.35]
                           #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
     # total 24 layers
     layer_idx = [10]
@@ -205,14 +125,19 @@ class sdxlimg2imgconfigs:
     
     num_tokens = 256
     image_size = 224
-    improcessor = AutoImageProcessor.from_pretrained(model_path)
+
+    # number of total iterations, 1000 is maximum, works when the mode is "running"
+    num_steps = 200
+    # number of random sampling for sweeping
+    sweeping_run_count = 200
+    
+    
     vitscheduler = ViTScheduler()
     imageH, imageW = 224, 224
     
     # total 12 heads
     num_heads = 12
-    all_selected_heads = [[i for i in range(12)], [0], [1], [2], [3], [4], [5], [6], 
-                          [7], [8], [9], [10], [11]]
+    all_selected_heads = [[i for i in range(12)]]
     current_selected_heads = all_selected_heads[0]
 
     # choose which feature to look, q: 0 k: 1 v: 2
@@ -223,18 +148,25 @@ class sdxlimg2imgconfigs:
     attention_channels = 64
     batch_size = 1
     
-    # data related
-    # read single image
+    # I/O related
     base_folder = "/home/leo/Documents/GenAI-Vision/attention/"
-    single_image_name = "bird.jpg"
+    single_image_name = "cat.jpg"
     single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
-    # sweeping perform parameter sweeping through sampling
-    # pre specify parameter combo for running mode
+
+    # outputs
+    outputdir = "./debug/" 
+    
+    sweepingdir = "./sweeping/"
+
+    metricoutputdir = "./metrics/"
+
+@dataclass
+class wandbconfigs:
     mode = "running"
 
-    running_project_name = "test sdxl run"
+    running_project_name = "test for SDXLtext2img "
 
-    sweeping_project_name = "test sweep runs 4-29"
+    sweeping_project_name = "test sweep"
 
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
@@ -260,17 +192,3 @@ class sdxlimg2imgconfigs:
             },
         })
     
-    # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 50
-    # number of random sampling for sweeping
-    sweeping_run_count = 200
-    
-    # outputs
-    outputdir = "./debug/" 
-    
-    sweepingdir = "./sweeping/"
-
-    metricoutputdir = "./metrics/"
-
-    # visualization related
-    dpi = 300

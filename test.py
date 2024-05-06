@@ -1,13 +1,10 @@
-from diffusers import AutoPipelineForImage2Image
-from diffusers.utils import load_image
+from diffusers import AutoPipelineForText2Image
 import torch
 
-pipe = AutoPipelineForImage2Image.from_pretrained("stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16")
-pipe.to("cuda")
+pipeline_text2image = AutoPipelineForText2Image.from_pretrained("stabilityai/sdxl-turbo", torch_dtype=torch.float16, variant="fp16")
+pipeline_text2image = pipeline_text2image.to("cuda")
 
-init_image = load_image("https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/cat.png").resize((512, 512))
+prompt = "A cinematic shot of a baby racoon wearing an intricate italian priest robe."
 
-prompt = "cat wizard, gandalf, lord of the rings, detailed, fantasy, cute, adorable, Pixar, Disney, 8k"
-
-print(pipe)
-image = pipe(prompt, image=init_image, num_inference_steps=2, strength=0.5, guidance_scale=0.0).images[0]
+image = pipeline_text2image(prompt=prompt, guidance_scale=0.0, num_inference_steps=1).images[0]
+image.save("test.jpg")
