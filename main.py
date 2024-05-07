@@ -8,7 +8,7 @@ from packaging import version
 import requests
 from dataclasses import dataclass
 from torchvision.utils import save_image
-from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection
+from transformers import CLIPImageProcessor, CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
 from transformers import AutoImageProcessor, AutoModel, AutoTokenizer
 from diffusers.configuration_utils import FrozenDict
 from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
@@ -16,8 +16,8 @@ from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMix
 from diffusers.models import AutoencoderKL, ImageProjection, UNet2DConditionModel
 from diffusers.models.lora import adjust_lora_scale_text_encoder
 from diffusers.schedulers import KarrasDiffusionSchedulers, DDPMScheduler
-from scheduler import DDPMSchedulerwithGuidance
-from diffusers import (StableDiffusionPipeline, StableDiffusionImg2ImgPipeline)
+from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
+from diffusers import (StableDiffusionPipeline, StableDiffusionXLPipeline, StableDiffusionImg2ImgPipeline)
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
@@ -72,11 +72,50 @@ class runner:
     # function to run experiment through predefined parameters
     def run_sd_img2img(self, wandb, seed, config = None):
         #wandb.log({"seed" : seed})
+        ## model related
+        prompt = "a high-quality image"
+        model_path = 'facebook/dinov2-base'
+        link = "stabilityai/sdxl-turbo"
+        
         # sample image used to prepare for diffusion
         sample_image = torch.tensor(np.array(Image.open(runconfigs.base_folder + runconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
+        
         prompt = "a high quality image"
 
-        pipe = self.runconfigs.stablediffusionxltext2imgpipewithvitguidance                                
+        pipe = StableDiffusionXLPipelineWithViTGuidance.from_pretrained('stabilityai/sdxl-turbo', torch_dtype=torch.float16)
+        pipe = pipe.to('cuda')
+        
+        pipe.vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
+        pipe.vae = AutoencoderKL.from_pretrained(link, subfolder="vae",torch_dtype=torch.float16)
+        pipe.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14",torch_dtype=torch.float16)
+        pipe.text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",torch_dtype=torch.float16)
+        pipe.tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+        pipe.tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+        pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=torch.float16)
+        pipe.unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet",torch_dtype=torch.float16)
+        
+        processor = AutoImageProcessor.from_pretrained(model_path)
+        improcessor = AutoImageProcessor.from_pretrained(model_path)
+        
+        size = [processor.crop_size["height"], processor.crop_size["width"]]
+        mean, std = processor.image_mean, processor.image_std
+        mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
+
+        """        
+        pipe = StableDiffusionXLPipelineWithViTGuidance(
+        vit = None,
+        vae = vae,
+        text_encoder = text_encoder,
+        text_encoder_2 = text_encoder_2,
+        tokenizer = tokenizer,
+        tokenizer_2 = tokenizer_2,
+        unet = unet, 
+        scheduler = ddimscheduler,
+        image_encoder = None,
+        feature_extractor = None,
+        force_zeros_for_empty_prompt = True,
+        add_watermarker = None).to("cuda")         
+        """        
         
         original_image_vitfeature = ViTFeature(runconfigs)
         original_image_vitfeature.read_one_image()
@@ -90,7 +129,6 @@ class runner:
                 runconfigs.current_selected_heads = selected_heads
                 wandb.log({"selected heads" : str(selected_heads)})
                 latent_vit_features = ViTFeature(runconfigs)
-
                 # parameters for sdxltext2img pipe
                 output = pipe(vit_input_size = self.runconfigs.size,
                             vit_input_mean = self.runconfigs.mean,

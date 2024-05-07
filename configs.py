@@ -51,16 +51,14 @@ class runconfigs:
     prompt = "a high-quality image"
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
-
+    """
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
     text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
     text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
     
     tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
     tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-    
-    processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
-    improcessor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
+
     
     size = [processor.crop_size["height"], processor.crop_size["width"]]
     mean, std = processor.image_mean, processor.image_std
@@ -75,20 +73,8 @@ class runconfigs:
 
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
 
-    stablediffusionxltext2imgpipewithvitguidance =  StableDiffusionXLPipelineWithViTGuidance(
-        vit = vit,
-        vae = vae,
-        text_encoder = text_encoder,
-        text_encoder_2 = text_encoder_2,
-        tokenizer = tokenizer,
-        tokenizer_2 = tokenizer_2,
-        unet = unet, 
-        scheduler = ddimscheduler,
-        image_encoder = None,
-        feature_extractor = None,
-        force_zeros_for_empty_prompt = True,
-        add_watermarker = None)
     
+        
     stablediffusionxlimg2imgpipewithvitguidance = StableDiffusionXLImg2ImgPipelineWithViTGuidance(
         vit = vit, 
         vae = vae, 
@@ -102,7 +88,11 @@ class runconfigs:
         feature_extractor=None, 
         requires_aesthetics_score= False, 
         force_zeros_for_empty_prompt=True, 
-        add_watermarker=None)
+        add_watermarker=None).to("cuda:0")
+    """
+        
+    processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
+    improcessor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
     
     # model parameters
     guidance_strength = [1]

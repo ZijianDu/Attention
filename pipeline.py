@@ -699,7 +699,7 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                  force_zeros_for_empty_prompt,
                  add_watermarker):
         super().__init__(vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler,
-                         image_encoder, feature_extractor, force_zeros_for_empty_prompt, add_watermarker)
+                         image_encoder, feature_extractor, force_zeros_for_empty_prompt)
         self.register_modules(vit = vit)
 
     @torch.no_grad()
