@@ -41,7 +41,7 @@ from skimage.transform import resize
 import torchvision.transforms as transforms 
 from transformers import AutoTokenizer, CLIPTextModelWithProjection
 from torchvision.transforms import Resize
-from vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
+from vit_feature_extractor import ViTFeature
 from pipeline import StableDiffusionImg2ImgPipelineWithSDEdit, StableDiffusionXLImg2ImgPipelineWithViTGuidance,  StableDiffusionXLPipelineWithViTGuidance
 from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
 
@@ -60,16 +60,13 @@ class runconfigs:
     tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
 
     
-    size = [processor.crop_size["height"], processor.crop_size["width"]]
-    mean, std = processor.image_mean, processor.image_std
-    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
+
     
-    vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
     
     # use overridden schedulers
     #ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
     
-    ddimscheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler")
+    
 
     unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
 
@@ -92,7 +89,10 @@ class runconfigs:
     """
         
     processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
-    improcessor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
+    size = [processor.crop_size["height"], processor.crop_size["width"]]
+    mean, std = processor.image_mean, processor.image_std
+    mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
+    
     
     # model parameters
     guidance_strength = [1]
@@ -121,8 +121,6 @@ class runconfigs:
     # number of random sampling for sweeping
     sweeping_run_count = 200
     
-    
-    vitscheduler = ViTScheduler()
     imageH, imageW = 224, 224
     
     # total 12 heads
@@ -141,7 +139,7 @@ class runconfigs:
     # I/O related
     base_folder = "/home/leo/Documents/GenAI-Vision/attention/"
     single_image_name = "cat.jpg"
-    single_image = improcessor(Image.open(base_folder + single_image_name))["pixel_values"][0]
+    single_image = processor(Image.open(base_folder + single_image_name))["pixel_values"][0]
 
     # outputs
     outputdir = "./debug/" 

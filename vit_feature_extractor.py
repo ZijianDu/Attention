@@ -17,23 +17,17 @@ import sys
 
 class ViTPipe():
     # define structural components needed for ViT
-    def __init__(self, vit, scheduler, torch_device):
-        self.vit = vit.to(torch_device)
-        self.scheduler = scheduler
+    def __init__(self, vit):
+        self.vit = vit
     # define variables/parameters needed to run the pipeline
-    def __call__(self, image, vit_input_size, layer_idx):
-        return self.scheduler.step(self.vit, image, vit_input_size, layer_idx)
-    
-# scheduler returen q/k/v of vit output of particular layer index
-class ViTScheduler():
-    def step(self, vit, images, vit_input_size, layer_idx):
-        vit(layer_idx, images, output_attentions=False)
-        return vit.getkey()
-    
-class ViTFeature:
-    def __init__(self, configs):
+    def __call__(self, image, layer_idx):
+        self.vit(layer_idx, image, output_attentions=False)
+        return self.vit.getkey()
+
+class ViTFeature(ViTPipe):
+    def __init__(self, configs, vit):
         self.configs = configs
-        self.pipe = ViTPipe(vit = self.configs.vit, scheduler = self.configs.vitscheduler, torch_device = 'cuda')
+        self.pipe = ViTPipe(vit = vit)
         # data is direct input to ViT model, shape: batch, 3, 224, 224, preprocessing needed if 
         # original image is of different shape
         self.data = torch.empty(configs.batch_size, 3, configs.imageH, configs.imageW).cuda()
@@ -58,7 +52,7 @@ class ViTFeature:
             im = Image.open(image_file_path)
             self.original_images.append(np.array(im))
             print("original image shape: ", np.array(im).shape)
-            image = self.configs.improcessor(im)["pixel_values"][0]
+            image = self.configs.processor(im)["pixel_values"][0]
             self.data[idx] = torch.tensor(image)
             print("image shape after processing: ", self.data[idx].shape)
         print("finished reading all images and resize ")
@@ -67,7 +61,7 @@ class ViTFeature:
     
     def read_one_image(self):
         im = Image.open(self.configs.base_folder + self.configs.single_image_name)
-        image = self.configs.improcessor(im)["pixel_values"][0]
+        image = self.configs.processor(im)["pixel_values"][0]
         self.data[0]= torch.tensor(image)
 
     # this function call vit pipeline to get original clean image's features of all heads
@@ -76,7 +70,7 @@ class ViTFeature:
         self.read_one_image()
         keys = torch.empty(1, self.configs.num_heads, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
         # get vit feature of all head of original clean image, cherry pick which head as needed later
-        keys = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = self.configs.layer_idx[0])
+        keys = self.pipe(self.data, layer_idx = self.configs.layer_idx[0])
         assert keys.shape[0] == 1 and keys.shape[1] == self.configs.num_heads
         assert keys.shape[2] == self.configs.num_patches ** 2, keys.shape[3] == self.configs.attention_channels
         self.all_original_vit_features = keys
@@ -99,7 +93,7 @@ class ViTFeature:
         keys = torch.zeros(1, 1, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
         for head in self.configs.current_selected_heads:
             self.data[0] = latent
-            qkv = self.pipe(self.data, vit_input_size = self.configs.size, layer_idx = self.configs.layer_idx[0])
+            qkv = self.pipe(self.data, layer_idx = self.configs.layer_idx[0])
             keys = torch.cat((keys, qkv[:, head, :, :].unsqueeze(1)), 1)
             del qkv
         keys = keys[:, 1:, :, :]

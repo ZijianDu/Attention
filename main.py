@@ -42,7 +42,7 @@ import shutil
 from skimage.transform import resize
 import torchvision.transforms as transforms
 from torchvision.transforms import Resize
-from vit_feature_extractor import ViTFeature, ViTPipe, ViTScheduler
+from vit_feature_extractor import ViTFeature
 from configs import runconfigs, wandbconfigs
 import os
 from util import processor
@@ -78,28 +78,20 @@ class runner:
         link = "stabilityai/sdxl-turbo"
         
         # sample image used to prepare for diffusion
-        sample_image = torch.tensor(np.array(Image.open(runconfigs.base_folder + runconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
-        
+        sample_image = torch.tensor(np.array(Image.open(self.runconfigs.base_folder + self.runconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
         prompt = "a high quality image"
 
-        pipe = StableDiffusionXLPipelineWithViTGuidance.from_pretrained('stabilityai/sdxl-turbo', torch_dtype=torch.float16)
-        pipe = pipe.to('cuda')
+        pipe = StableDiffusionXLPipelineWithViTGuidance.from_pretrained('stabilityai/sdxl-turbo', torch_dtype=torch.float16).to('cuda')
         
-        pipe.vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
-        pipe.vae = AutoencoderKL.from_pretrained(link, subfolder="vae",torch_dtype=torch.float16)
-        pipe.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14",torch_dtype=torch.float16)
-        pipe.text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",torch_dtype=torch.float16)
-        pipe.tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-        pipe.tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-        pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=torch.float16)
-        pipe.unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet",torch_dtype=torch.float16)
-        
-        processor = AutoImageProcessor.from_pretrained(model_path)
-        improcessor = AutoImageProcessor.from_pretrained(model_path)
-        
-        size = [processor.crop_size["height"], processor.crop_size["width"]]
-        mean, std = processor.image_mean, processor.image_std
-        mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
+        pipe.vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16).to('cuda')
+        pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype = torch.float16)
+        pipe.vae = AutoencoderKL.from_pretrained(link, subfolder = "vae", torch_dtype = torch.float16).to('cuda')
+        #pipe = pipe.to('cuda')
+        #pipe.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
+        #pipe.text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
+        #pipe.tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+        #pipe.tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+        #pipe.unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet")
 
         """        
         pipe = StableDiffusionXLPipelineWithViTGuidance(
@@ -117,20 +109,19 @@ class runner:
         add_watermarker = None).to("cuda")         
         """        
         
-        original_image_vitfeature = ViTFeature(runconfigs)
-        original_image_vitfeature.read_one_image()
+        original_image_vitfeature = ViTFeature(self.runconfigs, pipe.vit)
         original_image_vitfeature.extract_all_original_vit_features()
         original_vit_features = original_image_vitfeature.get_all_original_vit_features()
 
         # param: 0-vit 1-diffusion strength 2-guidance strength
-        for i, param in enumerate(runconfigs.all_params):
+        for i, param in enumerate(self.runconfigs.all_params):
             #wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
-            for selected_heads in runconfigs.all_selected_heads:
-                runconfigs.current_selected_heads = selected_heads
+            for selected_heads in self.runconfigs.all_selected_heads:
+                self.runconfigs.current_selected_heads = selected_heads
                 wandb.log({"selected heads" : str(selected_heads)})
-                latent_vit_features = ViTFeature(runconfigs)
+                latent_vit_features = ViTFeature(self.runconfigs, pipe.vit)
                 # parameters for sdxltext2img pipe
-                output = pipe(vit_input_size = self.runconfigs.size,
+                output = pipe(pipe.vae, pipe.vit, vit_input_size = self.runconfigs.size,
                             vit_input_mean = self.runconfigs.mean,
                             vit_input_std = self.runconfigs.std,
                             guidance_strength = param[1],

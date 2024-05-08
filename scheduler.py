@@ -102,10 +102,15 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             
             # pred original sample ix x0_hat
             pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+            print("predicted original sample: ", pred_original_sample)
+            print(torch.min(pred_original_sample))
+            print(torch.max(pred_original_sample))
             
             # this is needed to calculate vit feature for guidance
             # obtain image space prediction by decoding predicted x0
-            images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            #images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            images = vae.decode(torch.zeros(shape = (1, 4, 64, 64)))
+            print("image after decoding", images)
             
             # clamp image range
             torch.clamp(images, min = 0.0, max = 1.0)
@@ -186,8 +191,8 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
 class DDIMSchedulerwithGuidance(DDIMScheduler):
     def step(self, 
-             vit,
-             vae, 
+             vae,
+             vit, 
              debugger,
              vit_input_size, 
              vit_input_mean, 
@@ -250,9 +255,13 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
             
             # original code
             pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+            print("predicted original sample: ", pred_original_sample)
+            print(torch.min(pred_original_sample))
+            print(torch.max(pred_original_sample))
             
             # obtain image input to ViT
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
+            print("image after decoding", images)
             
             # clamp image range
             torch.clamp(images, min = 0.0, max = 1.0)

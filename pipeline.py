@@ -685,26 +685,11 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         
 
 class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
-    def __init__(self,
-                 vit,
-                 vae,
-                 text_encoder,
-                 text_encoder_2,
-                 tokenizer,
-                 tokenizer_2,
-                 unet, 
-                 scheduler,
-                 image_encoder,
-                 feature_extractor,
-                 force_zeros_for_empty_prompt,
-                 add_watermarker):
-        super().__init__(vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler,
-                         image_encoder, feature_extractor, force_zeros_for_empty_prompt)
-        self.register_modules(vit = vit)
-
     @torch.no_grad()
     def __call__(
         self,
+        vae, 
+        vit, 
         vit_input_size,
         vit_input_mean,
         vit_input_std,
@@ -1104,8 +1089,8 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                 latents_dtype = latents.dtype
 
                 # call modified DDIM with guidance
-                latents = self.scheduler.step(self.vit,
-                                self.vae, 
+                latents = self.scheduler.step(vae,
+                                vit, 
                                 debugger,
                                 vit_input_size, 
                                 vit_input_mean, 
@@ -1119,6 +1104,8 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                                 noise_pred,  
                                 t,  
                                 latents,
+                                use_clipped_model_output = False,
+                                variance_noise = None,
                                 **extra_step_kwargs, 
                                 return_dict=False)[0]
                 
