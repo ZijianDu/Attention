@@ -41,7 +41,6 @@ from skimage.transform import resize
 import torchvision.transforms as transforms 
 from transformers import AutoTokenizer, CLIPTextModelWithProjection
 from torchvision.transforms import Resize
-from vit_feature_extractor import ViTFeature
 from pipeline import StableDiffusionImg2ImgPipelineWithSDEdit, StableDiffusionXLImg2ImgPipelineWithViTGuidance,  StableDiffusionXLPipelineWithViTGuidance
 from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
 
@@ -95,7 +94,7 @@ class runconfigs:
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
     scheduler_type = 'ddpm'
-    pipe_type = "sdxl"
+    pipe_type = "sdxlimg2img"
 
     
     dtype = torch.float16
@@ -123,7 +122,7 @@ class runconfigs:
     image_size = 224
 
     # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 4
+    num_steps = 20
     # number of random sampling for sweeping
     sweeping_run_count = 200
     

@@ -87,9 +87,10 @@ class runner:
                                                             tokenizer=tokenizer, unet=unet, scheduler=scheduler, 
                                                             safety_checker=None, feature_extractor=None, 
                                                             image_encoder=None, requires_safety_checker=False).to(device="cuda")
-        else:
+        if self.runconfigs.pipe_type == "sdxlimg2img":
             link = "stabilityai/sdxl-turbo"
             model_path = "facebook/dinov2-base"
+            # fixed version for vae, original version has numerical issue
             vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", torch_dtype=torch.float16)
             text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14", torch_dtype = torch.float16)
             text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k", torch_dtype = torch.float16)
@@ -114,23 +115,21 @@ class runner:
         # sample image used for img2img pipelines
         sample_image = torch.tensor(np.array(Image.open(self.runconfigs.base_folder + self.runconfigs.single_image_name))).type(torch.float16).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
         sample_image = sample_image.to("cuda")
-        #sample_image = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std).requires_grad_(True)
         # construct pipeline according to run configs
         pipe = self.construct_pipe()
         prompt = "a high-quality image"
 
-        # param: 0-vit 1-diffusion strength 2-guidance strength
+        # param: 0-diffusion strength 1-guidance strength
         for i, param in enumerate(self.runconfigs.all_params):
             #wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
             for selected_heads in self.runconfigs.all_selected_heads:
                 self.runconfigs.current_selected_heads = selected_heads
                 wandb.log({"selected heads" : str(selected_heads)})    
-                # preprocess images to satisfy vit input dimensions    
+                # preprocessing is needed in order to match original key and latent key dimensions  
                 vit_input = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std)
                 original_k = pipe.vit(self.runconfigs.layer_idx[0], vit_input, output_attentions=False)
-                print(original_k.shape)
-                # parameters for sdxltext2img pipe
-                if self.runconfigs.pipe_type == "sdxl":
+                # run time
+                if self.runconfigs.pipe_type == "sdxlimg2img":
                     output = pipe(vit_input_size = self.runconfigs.size,
                             vit_input_mean = self.runconfigs.mean,
                             vit_input_std = self.runconfigs.std,
@@ -140,6 +139,7 @@ class runner:
                             image = sample_image,
                             diffusion_strength = param[0],
                             debugger = wandb, 
+
                             # original inputs
                             prompt = prompt,
                             prompt_2 = prompt,

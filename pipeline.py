@@ -160,6 +160,7 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
 
     # modify call function to take latent and guide with Vit
     @replace_example_docstring(EXAMPLE_DOC_STRING)
+    @torch.no_grad()
     def __call__(
         self,
         vit_input_size, 
@@ -574,15 +575,17 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
                 added_cond_kwargs = {"text_embeds": add_text_embeds, "time_ids": add_time_ids}
                 if ip_adapter_image is not None or ip_adapter_image_embeds is not None:
                     added_cond_kwargs["image_embeds"] = image_embeds
-                noise_pred = self.unet(
-                    latent_model_input,
-                    t,
-                    encoder_hidden_states=prompt_embeds,
-                    timestep_cond=timestep_cond,
-                    cross_attention_kwargs=self.cross_attention_kwargs,
-                    added_cond_kwargs=added_cond_kwargs,
-                    return_dict=False,
-                )[0]
+                
+                with torch.no_grad():
+                    noise_pred = self.unet(
+                        latent_model_input,
+                        t,
+                        encoder_hidden_states=prompt_embeds,
+                        timestep_cond=timestep_cond,
+                        cross_attention_kwargs=self.cross_attention_kwargs,
+                        added_cond_kwargs=added_cond_kwargs,
+                        return_dict=False,
+                    )[0]
 
                 # perform guidance
                 if self.do_classifier_free_guidance:
@@ -714,6 +717,7 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         
 
 class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
+    @torch.no_grad()
     def __call__(
         self,
         vit_input_size,
@@ -1248,6 +1252,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         self.register_modules(vit=vit)
     
     # modified call function to take noisy images and run denoising
+    @torch.no_grad()
     def __call__(
         self,
         vit_input_size, 
