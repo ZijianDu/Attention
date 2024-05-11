@@ -1453,15 +1453,44 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
 
                 #guidance_range_max = int(guidance_range * 1000 * diffusion_strength)
                 # compute the previous noisy sample x_t -> x_t-1, iterative, schedule return xt
-                latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                guidance_strength, all_original_vit_features, configs, generator = generator, return_dict=False)[0]
 
-                """try:
-                    torch.cuda.memory._dump_snapshot("memory.pickle")
-                except Exception as e:
-                    logger.error(f"Failed to capture memory snapshot {e}")
-                # Stop recording memory snapshot history.
-                torch.cuda.memory._record_memory_history(enabled=None)"""
+                # depending on scheduler's type, call schedulers in their respective ways
+                if configs.scheduler_type == 'ddpm':
+                    latents = self.scheduler.step(vae = self.vae, 
+                                                vit = self.vit, 
+                                                debugger = debugger, 
+                                                vit_input_size = vit_input_size, 
+                                                vit_input_mean = vit_input_mean, 
+                                                vit_input_std = vit_input_std,
+                                                guidance_strength = guidance_strength,
+                                                all_original_vit_features = all_original_vit_features,
+                                                configs = configs, 
+                                                # base model input
+                                                model_output = noise_pred,  
+                                                timestep = t, 
+                                                sample = latents, 
+                                                generator = generator, 
+                                                return_dict=False)[0]
+                if configs.scheduler_type == 'ddim':
+                    latents = self.scheduler.step(vae = self.vae, 
+                                                vit = self.vit, 
+                                                debugger = debugger, 
+                                                vit_input_size = vit_input_size, 
+                                                vit_input_mean = vit_input_mean, 
+                                                vit_input_std = vit_input_std,
+                                                guidance_strength = guidance_strength,
+                                                all_original_vit_features = all_original_vit_features,
+                                                configs = configs, 
+                                                # base model input
+                                                model_output = noise_pred,  
+                                                timestep = t, 
+                                                sample = latents, 
+                                                eta = 0.0,
+                                                use_clipped_model_output = False,
+                                                generator = generator, 
+                                                variance_noise = None, 
+                                                return_dict=False)[0]
+
                 
                 if callback_on_step_end is not None:
                     callback_kwargs = {}

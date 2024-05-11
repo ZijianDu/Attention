@@ -106,15 +106,15 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             # obtain image space prediction by decoding predicted x0
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
             
-            #print("image after decoding", images)
+            print("size of image after decoding", images.shape)
             
             # clamp image range
             #torch.clamp(images, min = 0.0, max = 1.0)
           
             vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-          
+            print("vit input size", vit_input.shape)
             latent_vit_features = vit(configs.layer_idx[0], vit_input, output_attentions=False)
-
+            
             #debugger.log({"latent vit feature" : latent_vit_features})
 
             #indices = torch.tensor(configs.current_selected_heads).cuda()
@@ -251,45 +251,25 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
             #images = pred_original_sample.unsqueeze(0)
             images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5
             
-            images.requires_grad = True
-            print(images.shape)
-
-            print("decoded image from vae", images.requires_grad)
-
-            vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std).requires_grad_(True)
-
-            
-            print("vit input", vit_input.requires_grad)
+            vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
           
-            latent_vit_features = vit(configs.layer_idx[0], vit_input, output_attentions=False)[1]
+            latent_vit_features = vit(configs.layer_idx[0], vit_input, output_attentions=False)
 
-            latent_vit_features.requires_grad = True
-            
             debugger.log({"latent vit feature" : latent_vit_features})
 
-            print(latent_vit_features.requires_grad) 
-
-            print(all_original_vit_features.requires_grad)
-
-            #selected_original_vit_features.requires_grad = True    
-        
-            #latent_vit_features.requires_grad = True
-
             # MSE between latent vit features and clean image features as guidance
-            curr_loss = loss(all_original_vit_features, latent_vit_features).requires_grad_(True)
+            curr_loss = loss(all_original_vit_features, latent_vit_features)
 
             #debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
 
-            print(curr_loss.requires_grad)
 
             gradient = torch.autograd.grad(curr_loss, [sample_])[0]
 
-            print("gradient", gradient)
 
             actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
             
             # original code, no guidance
-            pred_epsilon = model_output 
+            pred_epsilon = model_output - actual_guidance
 
         elif self.config.prediction_type == "sample":
             pred_original_sample = model_output

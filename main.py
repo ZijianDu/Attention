@@ -42,7 +42,6 @@ import shutil
 from skimage.transform import resize
 import torchvision.transforms as transforms
 from torchvision.transforms import Resize
-from vit_feature_extractor import ViTFeature
 from configs import runconfigs, wandbconfigs
 import os
 from util import processor
@@ -73,13 +72,22 @@ class runner:
     def construct_pipe(self):
         if self.runconfigs.pipe_type == "sd":
             link = "runwayml/stable-diffusion-v1-5"
-            pipe = StableDiffusionImg2ImgPipelineWithSDEdit.from_pretrained(link, torch_dtype=self.runconfigs.dtype)
-            pipe.vae = AutoencoderKL.from_pretrained(link, subfolder = "vae", torch_dtype=self.runconfigs.dtype)
-            
-            if self.runconfigs.scheduler_type == "ddim":
-                pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=self.runconfigs.dtype)
+            model_path = 'facebook/dinov2-base'
+            tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
+            vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16)
+            vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
+            text_encoder = CLIPTextModel.from_pretrained(link, subfolder="text_encoder")
+            unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
             if self.runconfigs.scheduler_type == "ddpm":
-                pipe.scheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=self.runconfigs.dtype)
+                scheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
+            if self.runconfigs.scheduler_type == "ddim":
+                scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
+            
+            pipe = StableDiffusionImg2ImgPipelineWithSDEdit(vit = vit, vae=vae, text_encoder=text_encoder, 
+                                                            tokenizer=tokenizer, unet=unet, scheduler=scheduler, 
+                                                            safety_checker=None, feature_extractor=None, 
+                                                            image_encoder=None, requires_safety_checker=False).to(device="cuda")
+            
         else:
             link = "stabilityai/sdxl-turbo"
             if self.runconfigs.pipe_type == "sdxlimg2img":
@@ -98,21 +106,23 @@ class runner:
 
     # function to run experiment through predefined parameters
     def run_sd_img2img(self, wandb, seed, config = None):
-        prompt = "a high-quality image"
         # sample image used for img2img pipelines
         sample_image = torch.tensor(np.array(Image.open(self.runconfigs.base_folder + self.runconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
         sample_image = sample_image.to("cuda")
-        sample_image = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std).requires_grad_(True)
+        #sample_image = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std).requires_grad_(True)
         # construct pipeline according to run configs
         pipe = self.construct_pipe()
+        prompt = "a high-quality image"
 
         # param: 0-vit 1-diffusion strength 2-guidance strength
         for i, param in enumerate(self.runconfigs.all_params):
             #wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
             for selected_heads in self.runconfigs.all_selected_heads:
                 self.runconfigs.current_selected_heads = selected_heads
-                wandb.log({"selected heads" : str(selected_heads)})        
-                original_k = pipe.vit(self.runconfigs.layer_idx[0], sample_image, output_attentions=False)
+                wandb.log({"selected heads" : str(selected_heads)})    
+                # preprocess images to satisfy vit input dimensions    
+                vit_input = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std)
+                original_k = pipe.vit(self.runconfigs.layer_idx[0], vit_input, output_attentions=False)
                 print(original_k.shape)
                 # parameters for sdxltext2img pipe
                 """                
@@ -131,18 +141,22 @@ class runner:
                             generator = None, 
                             return_dict = False)
                 """
+                ## format for calling SDImg2ImgSDEdit 
                 output = pipe(vit_input_size = self.runconfigs.size,
                               vit_input_mean = self.runconfigs.mean,
                               vit_input_std = self.runconfigs.std,
-                              guidance_strength = self.runconfigs.guidance_strength, 
+                              guidance_strength = param[1], 
                               all_original_vit_features = original_k,
-                              prompt = prompt,
                               configs = self.runconfigs,
-                              debugger = wandb,
+                              prompt = prompt,
                               image = sample_image,
-                              diffusion_strength = 0.1,
-                              num_inference_steps= 20
+                              diffusion_strength = param[0],
+                              num_inference_steps= 20,
+                              generator = None, 
+                              debugger = wandb
                               )
+
+                """                
                 img_predicted = torch.tensor(np.array(output[0][0])).permute(2, 0, 1).unsqueeze(0)
                 img_noprocess = Image.open(runconfigs.base_folder + runconfigs.single_image_name)
                 sample_image_array = np.array(sample_image)
@@ -156,6 +170,7 @@ class runner:
                 dist_alex, dist_vgg = loss_fn_alex(lpips_normed_predicted_img, lpips_normed_original_img), loss_fn_vgg(img_predicted, resized_original_image)
                 wandb.log({"dist_alex" : dist_alex.detach().numpy(), "dist_vgg" : dist_vgg.detach().numpy()})
                 wandb.log({"predicted image" : wandb.Image(img_predicted)})
+                """
 
     # function to run sweeping using configs defined by wandb.config dict
     def run_parameter_sweeping(self, config = None):

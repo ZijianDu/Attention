@@ -94,8 +94,8 @@ class runconfigs:
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
-    scheduler_type = 'ddpm'
-    pipe_type = "sdxltxt2img"
+    scheduler_type = 'ddim'
+    pipe_type = "sd"
 
     
     dtype = torch.float16
