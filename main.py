@@ -69,64 +69,58 @@ class runner:
             plt.hist(image.flatten(), alpha = 0.4, bins = 100)
         plt.savefig('overlapped image histo.png')
 
+    # construct pipeline according to configs
+    def construct_pipe(self):
+        if self.runconfigs.pipe_type == "sd":
+            link = "runwayml/stable-diffusion-v1-5"
+            pipe = StableDiffusionImg2ImgPipelineWithSDEdit.from_pretrained(link, torch_dtype=self.runconfigs.dtype)
+            pipe.vae = AutoencoderKL.from_pretrained(link, subfolder = "vae", torch_dtype=self.runconfigs.dtype)
+            
+            if self.runconfigs.scheduler_type == "ddim":
+                pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=self.runconfigs.dtype)
+            if self.runconfigs.scheduler_type == "ddpm":
+                pipe.scheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=self.runconfigs.dtype)
+        else:
+            link = "stabilityai/sdxl-turbo"
+            if self.runconfigs.pipe_type == "sdxlimg2img":
+                pipe = StableDiffusionXLImg2ImgPipelineWithViTGuidance.from_pretrained(link, torch_dtype=self.runconfigs.dtype, variant="fp16")
+            if self.runconfigs.pipe_type == "sdxltxt2img":
+                pipe = StableDiffusionXLPipelineWithViTGuidance.from_pretrained(link, torch_dtype=self.runconfigs.dtype, variant="fp16")
+            if self.runconfigs.scheduler_type == "ddim":
+                pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=self.runconfigs.dtype)
+            if self.runconfigs.scheduler_type == "ddpm":
+                pipe.scheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype=self.runconfigs.dtype)
+            pipe.vae = AutoencoderKL.from_pretrained("madebyollin/sdxl-vae-fp16-fix", subfoldder = "vae", torch_dtype=self.runconfigs.dtype).to('cuda')
+        # same for all pipes
+        pipe.vit = Dinov2ModelwOutput.from_pretrained('facebook/dinov2-base', torch_dtype = self.runconfigs.dtype).to('cuda')
+        pipe = pipe.to("cuda")
+        return pipe
+
     # function to run experiment through predefined parameters
     def run_sd_img2img(self, wandb, seed, config = None):
-        #wandb.log({"seed" : seed})
-        ## model related
         prompt = "a high-quality image"
-        model_path = 'facebook/dinov2-base'
-        link = "stabilityai/sdxl-turbo"
-        
-        # sample image used to prepare for diffusion
+        # sample image used for img2img pipelines
         sample_image = torch.tensor(np.array(Image.open(self.runconfigs.base_folder + self.runconfigs.single_image_name))).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
-        prompt = "a high quality image"
-
-        pipe = StableDiffusionXLPipelineWithViTGuidance.from_pretrained('stabilityai/sdxl-turbo', torch_dtype=torch.float16).to('cuda')
-        
-        pipe.vit = Dinov2ModelwOutput.from_pretrained(model_path, torch_dtype = torch.float16).to('cuda')
-        pipe.scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_dtype = torch.float16)
-        pipe.vae = AutoencoderKL.from_pretrained(link, subfolder = "vae", torch_dtype = torch.float16).to('cuda')
-        #pipe = pipe.to('cuda')
-        #pipe.text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
-        #pipe.text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
-        #pipe.tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-        #pipe.tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-        #pipe.unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet")
-
-        """        
-        pipe = StableDiffusionXLPipelineWithViTGuidance(
-        vit = None,
-        vae = vae,
-        text_encoder = text_encoder,
-        text_encoder_2 = text_encoder_2,
-        tokenizer = tokenizer,
-        tokenizer_2 = tokenizer_2,
-        unet = unet, 
-        scheduler = ddimscheduler,
-        image_encoder = None,
-        feature_extractor = None,
-        force_zeros_for_empty_prompt = True,
-        add_watermarker = None).to("cuda")         
-        """        
-        
-        original_image_vitfeature = ViTFeature(self.runconfigs, pipe.vit)
-        original_image_vitfeature.extract_all_original_vit_features()
-        original_vit_features = original_image_vitfeature.get_all_original_vit_features()
+        sample_image = sample_image.to("cuda")
+        sample_image = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std).requires_grad_(True)
+        # construct pipeline according to run configs
+        pipe = self.construct_pipe()
 
         # param: 0-vit 1-diffusion strength 2-guidance strength
         for i, param in enumerate(self.runconfigs.all_params):
             #wandb.log({"diffusion strength" : param[1], "guidance strength" : param[2]})
             for selected_heads in self.runconfigs.all_selected_heads:
                 self.runconfigs.current_selected_heads = selected_heads
-                wandb.log({"selected heads" : str(selected_heads)})
-                latent_vit_features = ViTFeature(self.runconfigs, pipe.vit)
+                wandb.log({"selected heads" : str(selected_heads)})        
+                original_k = pipe.vit(self.runconfigs.layer_idx[0], sample_image, output_attentions=False)
+                print(original_k.shape)
                 # parameters for sdxltext2img pipe
-                output = pipe(pipe.vae, pipe.vit, vit_input_size = self.runconfigs.size,
+                """                
+                output = pipe(vit_input_size = self.runconfigs.size,
                             vit_input_mean = self.runconfigs.mean,
                             vit_input_std = self.runconfigs.std,
                             guidance_strength = param[1],
-                            all_original_vit_features = original_vit_features,
-                            vitfeature= latent_vit_features,
+                            all_original_vit_features = original_k,
                             configs = self.runconfigs, 
                             image = sample_image,
                             diffusion_strength = param[0],
@@ -136,7 +130,19 @@ class runner:
                             num_inference_steps = self.runconfigs.num_steps,
                             generator = None, 
                             return_dict = False)
-                
+                """
+                output = pipe(vit_input_size = self.runconfigs.size,
+                              vit_input_mean = self.runconfigs.mean,
+                              vit_input_std = self.runconfigs.std,
+                              guidance_strength = self.runconfigs.guidance_strength, 
+                              all_original_vit_features = original_k,
+                              prompt = prompt,
+                              configs = self.runconfigs,
+                              debugger = wandb,
+                              image = sample_image,
+                              diffusion_strength = 0.1,
+                              num_inference_steps= 20
+                              )
                 img_predicted = torch.tensor(np.array(output[0][0])).permute(2, 0, 1).unsqueeze(0)
                 img_noprocess = Image.open(runconfigs.base_folder + runconfigs.single_image_name)
                 sample_image_array = np.array(sample_image)

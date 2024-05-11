@@ -16,20 +16,8 @@ from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusion
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker
 from diffusers.utils.torch_utils import randn_tensor
-from diffusers.utils import (
-    PIL_INTERPOLATION,
-    USE_PEFT_BACKEND,
-    deprecate,
-    logging,
-    replace_example_docstring,
-    scale_lora_layers,
-    unscale_lora_layers,
-)
 import logging
 logger = logging.getLogger()
-MAX_NUM_OF_MEM_EVENTS_PER_SNAPSHOT = 10000
-from diffusers import StableDiffusionXLImg2ImgPipeline
-from diffusers.image_processor import PipelineImageInput, VaeImageProcessor
 from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
 from transformers import (
     CLIPImageProcessor,
@@ -38,7 +26,13 @@ from transformers import (
     CLIPTokenizer,
     CLIPVisionModelWithProjection,
 )
-from diffusers import loaders
+
+from diffusers.loaders import (
+    FromSingleFileMixin,
+    IPAdapterMixin,
+    StableDiffusionXLLoraLoaderMixin,
+    TextualInversionLoaderMixin,
+)
 
 from diffusers.models import AutoencoderKL, ImageProjection, UNet2DConditionModel
 from diffusers.models.attention_processor import (
@@ -59,31 +53,30 @@ from diffusers.utils import (
     scale_lora_layers,
     unscale_lora_layers,
 )
-from diffusers.utils.torch_utils import randn_tensor
-from diffusers.pipelines.pipeline_utils import DiffusionPipeline, StableDiffusionMixin
-from diffusers.pipelines.stable_diffusion_xl.pipeline_output import StableDiffusionXLPipelineOutput
 
+
+if is_invisible_watermark_available():
+    from diffusers.pipelines.stable_diffusion_xl.watermark import StableDiffusionXLWatermarker
+
+XLA_AVAILABLE = False
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
+
 EXAMPLE_DOC_STRING = """
     Examples:
         ```py
         >>> import torch
-        >>> from diffusers import StableDiffusionXLImg2ImgPipeline
-        >>> from diffusers.utils import load_image
+        >>> from diffusers import StableDiffusionXLPipeline
 
-        >>> pipe = StableDiffusionXLImg2ImgPipeline.from_pretrained(
-        ...     "stabilityai/stable-diffusion-xl-refiner-1.0", torch_dtype=torch.float16
+        >>> pipe = StableDiffusionXLPipeline.from_pretrained(
+        ...     "stabilityai/stable-diffusion-xl-base-1.0", torch_dtype=torch.float16
         ... )
         >>> pipe = pipe.to("cuda")
-        >>> url = "https://huggingface.co/datasets/patrickvonplaten/images/resolve/main/aa_xl/000000009.png"
 
-        >>> init_image = load_image(url).convert("RGB")
         >>> prompt = "a photo of an astronaut riding a horse on mars"
-        >>> image = pipe(prompt, image=init_image).images[0]
+        >>> image = pipe(prompt).images[0]
         ```
 """
-
 
 # Copied from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion.rescale_noise_cfg
 def rescale_noise_cfg(noise_cfg, noise_pred_text, guidance_rescale=0.0):
@@ -174,7 +167,6 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         vit_input_std,
         guidance_strength, 
         all_original_vit_features, 
-        vitfeature,
         configs,
         debugger, 
         prompt: Union[str, List[str]] = None,
@@ -604,7 +596,7 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
                 latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                guidance_strength, all_original_vit_features, vitfeature, configs, generator = generator, return_dict=False)[0]
+                guidance_strength, all_original_vit_features, configs, generator = generator, return_dict=False)[0]
                 if latents.dtype != latents_dtype:
                     if torch.backends.mps.is_available():
                         # some platforms (eg. apple mps) misbehave due to a pytorch bug: https://github.com/pytorch/pytorch/pull/99272
@@ -688,14 +680,11 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
     @torch.no_grad()
     def __call__(
         self,
-        vae, 
-        vit, 
         vit_input_size,
         vit_input_mean,
         vit_input_std,
         guidance_strength, 
         all_original_vit_features, 
-        vitfeature,
         configs, 
         image, 
         diffusion_strength,
@@ -1089,25 +1078,26 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                 latents_dtype = latents.dtype
 
                 # call modified DDIM with guidance
-                latents = self.scheduler.step(vae,
-                                vit, 
+                latents = self.scheduler.step(
+                                self.vae,
+                                self.vit,
                                 debugger,
                                 vit_input_size, 
                                 vit_input_mean, 
                                 vit_input_std,
                                 guidance_strength, 
                                 all_original_vit_features, 
-                                vitfeature, 
-                                configs, 
-                                
+                                configs,
                                 # base class arguments
                                 noise_pred,  
                                 t,  
                                 latents,
-                                use_clipped_model_output = False,
-                                variance_noise = None,
-                                **extra_step_kwargs, 
-                                return_dict=False)[0]
+                                generator, 
+                                return_dict = False)[0]
+                                #use_clipped_model_output = False,
+                                #variance_noise = None,
+                                #**extra_step_kwargs, 
+                                #return_dict=False)[0]
                 
 
                 if latents.dtype != latents_dtype:
@@ -1137,9 +1127,6 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                     if callback is not None and i % callback_steps == 0:
                         step_idx = i // getattr(self.scheduler, "order", 1)
                         callback(step_idx, t, latents)
-
-                if XLA_AVAILABLE:
-                    xm.mark_step()
 
         if not output_type == "latent":
             # make sure the VAE is in float32 mode, as it overflows in float16
@@ -1217,7 +1204,6 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
         vit_input_std,
         guidance_strength, 
         all_original_vit_features, 
-        vitfeature,
         configs,
         prompt: Union[str, List[str]] = None,
         image: PipelineImageInput = None,
@@ -1468,7 +1454,7 @@ class StableDiffusionImg2ImgPipelineWithSDEdit(StableDiffusionImg2ImgPipeline):
                 #guidance_range_max = int(guidance_range * 1000 * diffusion_strength)
                 # compute the previous noisy sample x_t -> x_t-1, iterative, schedule return xt
                 latents = self.scheduler.step(self.vit, self.vae, debugger, noise_pred, t, latents, vit_input_size, vit_input_mean, vit_input_std,
-                guidance_strength, all_original_vit_features, vitfeature, configs, generator = generator, return_dict=False)[0]
+                guidance_strength, all_original_vit_features, configs, generator = generator, return_dict=False)[0]
 
                 """try:
                     torch.cuda.memory._dump_snapshot("memory.pickle")

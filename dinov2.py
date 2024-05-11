@@ -249,17 +249,4 @@ class Dinov2ModelwOutput(Dinov2PreTrainedModel):
 
         ## set qkv for each iteration
         ## CLS token w.r.t all other tokens
-        self.key = self.encoder.layer[layer_idx].attention.attention.key_layer[:, :, 1:, :]
-        torch.cuda.empty_cache()
-
-        return BaseModelOutputWithPoolingwAttentionScores(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-            attention_scores=encoder_outputs.attention_scores,
-        )
-
-
-
-
+        return self.encoder.layer[layer_idx].attention.attention.key_layer[:, :, 1:, :]

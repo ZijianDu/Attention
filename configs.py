@@ -51,6 +51,7 @@ class runconfigs:
     prompt = "a high-quality image"
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
+    
     """
     vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
     text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
@@ -93,6 +94,11 @@ class runconfigs:
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
+    scheduler_type = 'ddpm'
+    pipe_type = "sdxltxt2img"
+
+    
+    dtype = torch.float16
     
     # model parameters
     guidance_strength = [1]

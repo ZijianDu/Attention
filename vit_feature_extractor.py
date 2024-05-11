@@ -67,22 +67,21 @@ class ViTFeature(ViTPipe):
     # this function call vit pipeline to get original clean image's features of all heads
     # call this function once in main pipeline
     def extract_all_original_vit_features(self):
+        # sanity check
+        for headidx in self.configs.current_selected_heads:
+            assert headidx >= 0 
+            assert headidx < self.configs.num_heads
         self.read_one_image()
-        keys = torch.empty(1, self.configs.num_heads, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
-        # get vit feature of all head of original clean image, cherry pick which head as needed later
+        # select the original vit features for specified heads
         keys = self.pipe(self.data, layer_idx = self.configs.layer_idx[0])
-        assert keys.shape[0] == 1 and keys.shape[1] == self.configs.num_heads
-        assert keys.shape[2] == self.configs.num_patches ** 2, keys.shape[3] == self.configs.attention_channels
-        self.all_original_vit_features = keys
-        del keys
+        indices = torch.tensor(self.configs.current_selected_heads).cuda()
+        selected_original_vit_features = torch.index_select(keys, 1, indices)
 
-    def get_all_original_vit_features(self):
-        assert self.all_original_vit_features != None
-        assert self.all_original_vit_features.shape[0] == self.configs.batch_size
-        assert self.all_original_vit_features.shape[1] == self.configs.num_heads
-        assert self.all_original_vit_features.shape[2] == self.configs.num_patches * self.configs.num_patches
-        assert self.all_original_vit_features.shape[3] == self.configs.attention_channels
-        return self.all_original_vit_features
+        assert selected_original_vit_features.shape[0] == self.configs.batch_size
+        assert selected_original_vit_features.shape[1] == len(self.configs.current_selected_heads)
+        assert selected_original_vit_features.shape[2] == self.configs.num_patches * self.configs.num_patches
+        assert selected_original_vit_features.shape[3] == self.configs.attention_channels
+        return selected_original_vit_features
 
     # extract features of selected head's feature of the predicted x0 from xt, need to call everytime there is a new latent
     def extract_selected_latent_vit_features(self, latent):
@@ -90,25 +89,18 @@ class ViTFeature(ViTPipe):
         for headidx in self.configs.current_selected_heads:
             assert headidx >= 0 
             assert headidx < self.configs.num_heads
-        keys = torch.zeros(1, 1, self.configs.num_patches * self.configs.num_patches, self.configs.attention_channels).cuda()
-        for head in self.configs.current_selected_heads:
-            self.data[0] = latent
-            qkv = self.pipe(self.data, layer_idx = self.configs.layer_idx[0])
-            keys = torch.cat((keys, qkv[:, head, :, :].unsqueeze(1)), 1)
-            del qkv
-        keys = keys[:, 1:, :, :]
-        assert keys.shape[0] == 1 and keys.shape[1] == len(self.configs.current_selected_heads)
-        assert keys.shape[2] == self.configs.num_patches ** 2 and keys.shape[3] == self.configs.attention_channels
-        self.selected_latent_vit_features = keys
-        del keys
 
-    def get_selected_latent_vit_features(self):
-        assert self.selected_latent_vit_features != None
-        assert self.selected_latent_vit_features.shape[0] == self.configs.batch_size
-        assert self.selected_latent_vit_features.shape[1] == len(self.configs.current_selected_heads)
-        assert self.selected_latent_vit_features.shape[2] == self.configs.num_patches * self.configs.num_patches
-        assert self.selected_latent_vit_features.shape[3] == self.configs.attention_channels
-        return self.selected_latent_vit_features
+        # return key in the vit attention 
+        keys = self.pipe(latent, layer_idx = self.configs.layer_idx[0])
+        # choose the selected heads
+        indices = torch.tensor(self.configs.current_selected_heads).cuda()
+        selected_latent_vit_features = torch.index_select(keys, 1, indices)
+
+        assert selected_latent_vit_features.shape[0] == self.configs.batch_size
+        assert selected_latent_vit_features.shape[1] == len(self.configs.current_selected_heads)
+        assert selected_latent_vit_features.shape[2] == self.configs.num_patches * self.configs.num_patches
+        assert selected_latent_vit_features.shape[3] == self.configs.attention_channels
+        return selected_latent_vit_features
 
 
 def get_original_image_shapes(self, configs):
