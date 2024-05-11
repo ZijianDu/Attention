@@ -271,18 +271,6 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
             # original code, no guidance
             pred_epsilon = model_output - actual_guidance
 
-        elif self.config.prediction_type == "sample":
-            pred_original_sample = model_output
-            pred_epsilon = (sample_ - alpha_prod_t ** (0.5) * pred_original_sample) / beta_prod_t ** (0.5)
-        elif self.config.prediction_type == "v_prediction":
-            pred_original_sample = (alpha_prod_t**0.5) * sample_ - (beta_prod_t**0.5) * model_output
-            pred_epsilon = (alpha_prod_t**0.5) * model_output + (beta_prod_t**0.5) * sample_
-        else:
-            raise ValueError(
-                f"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, `sample`, or"
-                " `v_prediction`"
-            )
-
         # 4. Clip or threshold "predicted x_0"
         if self.config.thresholding:
             pred_original_sample = self._threshold_sample(pred_original_sample)

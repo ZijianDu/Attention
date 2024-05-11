@@ -94,8 +94,8 @@ class runconfigs:
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
-    scheduler_type = 'ddim'
-    pipe_type = "sd"
+    scheduler_type = 'ddpm'
+    pipe_type = "sdxl"
 
     
     dtype = torch.float16
@@ -123,7 +123,7 @@ class runconfigs:
     image_size = 224
 
     # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 200
+    num_steps = 4
     # number of random sampling for sweeping
     sweeping_run_count = 200
     
