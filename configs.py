@@ -50,43 +50,6 @@ class runconfigs:
     prompt = "a high-quality image"
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
-    
-    """
-    vae = AutoencoderKL.from_pretrained(link, subfolder="vae").to(device="cuda")
-    text_encoder = CLIPTextModel.from_pretrained("openai/clip-vit-large-patch14")
-    text_encoder_2 = CLIPTextModelWithProjection.from_pretrained("laion/CLIP-ViT-bigG-14-laion2B-39B-b160k")
-    
-    tokenizer = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-    tokenizer_2 = AutoTokenizer.from_pretrained(link, subfolder="tokenizer", torch_dtype=torch.float16)
-
-    
-
-    
-    
-    # use overridden schedulers
-    #ddpmscheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler")
-    
-    
-
-    unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet").to(device="cuda")
-
-    
-        
-    stablediffusionxlimg2imgpipewithvitguidance = StableDiffusionXLImg2ImgPipelineWithViTGuidance(
-        vit = vit, 
-        vae = vae, 
-        text_encoder = text_encoder, 
-        text_encoder_2 = text_encoder_2, 
-        tokenizer=tokenizer, 
-        tokenizer_2 = tokenizer_2, 
-        unet=unet, 
-        scheduler=DDIMSchedulerwithGuidance, 
-        image_encoder = None, 
-        feature_extractor=None, 
-        requires_aesthetics_score= False, 
-        force_zeros_for_empty_prompt=True, 
-        add_watermarker=None).to("cuda:0")
-    """
         
     processor = AutoImageProcessor.from_pretrained(model_path, torch_dtype=torch.float16)
     size = [processor.crop_size["height"], processor.crop_size["width"]]
@@ -94,20 +57,19 @@ class runconfigs:
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
     scheduler_type = 'ddpm'
-    pipe_type = "sdxlimg2img"
-
+    pipe_type = "sd"
     
     dtype = torch.float16
     
     # model parameters
-    guidance_strength = [1]
+    guidance_strength = [0, 50]
     #, 20, 26, 28, 30, 32, 34, 36, 40]
 
     # select the range of reverse diffusion process when guidance is actually applied
     guidance_range = 0.7
   
     # percentage iterations to add noise before denoising, higher means more noise added
-    diffusion_strength = [0.35]
+    diffusion_strength = [0.35, 0.6]
                           #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
     # total 24 layers
     layer_idx = [10]
@@ -122,7 +84,7 @@ class runconfigs:
     image_size = 224
 
     # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 20
+    num_steps = 200
     # number of random sampling for sweeping
     sweeping_run_count = 200
     
@@ -148,16 +110,14 @@ class runconfigs:
 
     # outputs
     outputdir = "./debug/" 
-    
     sweepingdir = "./sweeping/"
-
     metricoutputdir = "./metrics/"
 
 @dataclass
 class wandbconfigs:
     mode = "running"
 
-    running_project_name = "test for SDXLtext2img "
+    running_project_name = "test for refactored sd"
 
     sweeping_project_name = "test sweep"
 

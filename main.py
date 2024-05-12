@@ -57,6 +57,7 @@ warnings.filterwarnings("ignore")
 from configs import runconfigs, wandbconfigs
 from torchvision.transforms import v2
 runconfigs, wandbconfigs = runconfigs(), wandbconfigs()
+torch.set_warn_always(True)
 
 class runner:
     def __init__(self, runconfigs, wandbconfigs):
@@ -87,7 +88,9 @@ class runner:
                                                             tokenizer=tokenizer, unet=unet, scheduler=scheduler, 
                                                             safety_checker=None, feature_extractor=None, 
                                                             image_encoder=None, requires_safety_checker=False).to(device="cuda")
-        if self.runconfigs.pipe_type == "sdxlimg2img":
+        
+        # pipeline construction follow similar pattern
+        if self.runconfigs.pipe_type == "sdxlimg2img" or self.runconfigs.pipe_type == "sdxltxt2img":
             link = "stabilityai/sdxl-turbo"
             model_path = "facebook/dinov2-base"
             # fixed version for vae, original version has numerical issue
@@ -106,12 +109,12 @@ class runner:
 
             pipe = StableDiffusionXLImg2ImgPipelineWithViTGuidance(vit = vit, vae = vae, text_encoder = text_encoder, text_encoder_2 = text_encoder_2, 
                                                                     tokenizer=tokenizer, tokenizer_2 = tokenizer_2, unet=unet, 
-                                                                    scheduler=scheduler, image_encoder = None, feature_extractor=None, 
+                                                           scheduler=scheduler, image_encoder = None, feature_extractor=None, 
                                                                     requires_aesthetics_score= False, force_zeros_for_empty_prompt=True).to(device="cuda")
-            return pipe
+        return pipe
         
     # function to run experiment through predefined parameters
-    def run_sd_img2img(self, wandb, seed, config = None):
+    def run(self, wandb, seed, config = None):
         # sample image used for img2img pipelines
         sample_image = torch.tensor(np.array(Image.open(self.runconfigs.base_folder + self.runconfigs.single_image_name))).type(torch.float16).unsqueeze(0).permute(0, 3, 1, 2) / 255.0
         sample_image = sample_image.to("cuda")
@@ -129,6 +132,7 @@ class runner:
                 vit_input = _preprocess_vit_input(sample_image, self.runconfigs.size, self.runconfigs.mean, self.runconfigs.std)
                 original_k = pipe.vit(self.runconfigs.layer_idx[0], vit_input, output_attentions=False)
                 # run time
+                # SDXL img2img vs. txt2img difference is former has diffusion strength input variable
                 if self.runconfigs.pipe_type == "sdxlimg2img":
                     output = pipe(vit_input_size = self.runconfigs.size,
                             vit_input_mean = self.runconfigs.mean,
@@ -137,16 +141,30 @@ class runner:
                             all_original_vit_features = original_k,
                             configs = self.runconfigs, 
                             image = sample_image,
-                            diffusion_strength = param[0],
                             debugger = wandb, 
-
+                            # original inputs
+                            prompt = prompt,
+                            prompt_2 = prompt,
+                            strength = param[0],
+                            num_inference_steps = self.runconfigs.num_steps,
+                            generator = None, 
+                            return_dict = False)
+                if self.runconfigs.pipe_type == "sdxltxt2img":
+                    output = pipe(vit_input_size = self.runconfigs.size,
+                            vit_input_mean = self.runconfigs.mean,
+                            vit_input_std = self.runconfigs.std,
+                            guidance_strength = param[1],
+                            all_original_vit_features = original_k,
+                            configs = self.runconfigs, 
+                            image = sample_image,
+                            diffusion_strength = None, 
+                            debugger = wandb, 
                             # original inputs
                             prompt = prompt,
                             prompt_2 = prompt,
                             num_inference_steps = self.runconfigs.num_steps,
                             generator = None, 
                             return_dict = False)
-                
                 if self.runconfigs.pipe_type == "sd":
                     output = pipe(vit_input_size = self.runconfigs.size,
                                 vit_input_mean = self.runconfigs.mean,
@@ -157,26 +175,21 @@ class runner:
                                 prompt = prompt,
                                 image = sample_image,
                                 diffusion_strength = param[0],
-                                num_inference_steps= 20,
+                                num_inference_steps= self.runconfigs.num_steps,
                                 generator = None, 
                                 debugger = wandb
-                                )
-
-                """                
+                                )       
                 img_predicted = torch.tensor(np.array(output[0][0])).permute(2, 0, 1).unsqueeze(0)
-                img_noprocess = Image.open(runconfigs.base_folder + runconfigs.single_image_name)
-                sample_image_array = np.array(sample_image)
-                shape = (sample_image_array[1], sample_image_array[1], sample_image_array[2])
-                transforms = v2.Compose([v2.ToImage(),  # Convert to tensor, only needed if you had a PIL image
-                                        v2.RandomResizedCrop(size=shape, antialias=True)])
-                resized_original_image = transforms(img_noprocess).unsqueeze(0)
-                lpips_normed_predicted_img = img_predicted / 255.0 - 0.5
-                lpips_normed_original_img = resized_original_image / 255.0 - 0.5
+                img_noprocess = torch.tensor(np.array(Image.open(runconfigs.base_folder + runconfigs.single_image_name))).permute(2, 0, 1).unsqueeze(0)
+                lpips_normed_predicted_img = (img_predicted / 255.0 - 0.5) * 2.0
+                lpips_normed_original_img = (img_noprocess / 255.0 - 0.5) * 2.0
+                torch.clamp(lpips_normed_predicted_img, min = -1.0, max = 1.0)
+                torch.clamp(lpips_normed_original_img, min = -1.0, max = 1.0)
                 loss_fn_alex, loss_fn_vgg = lpips.LPIPS(net = 'alex'), lpips.LPIPS(net = 'vgg')
-                dist_alex, dist_vgg = loss_fn_alex(lpips_normed_predicted_img, lpips_normed_original_img), loss_fn_vgg(img_predicted, resized_original_image)
+                dist_alex, dist_vgg = loss_fn_alex(lpips_normed_predicted_img, lpips_normed_original_img), loss_fn_vgg(lpips_normed_predicted_img, lpips_normed_original_img)
                 wandb.log({"dist_alex" : dist_alex.detach().numpy(), "dist_vgg" : dist_vgg.detach().numpy()})
                 wandb.log({"predicted image" : wandb.Image(img_predicted)})
-                """
+                
 
     # function to run sweeping using configs defined by wandb.config dict
     def run_parameter_sweeping(self, config = None):
@@ -224,5 +237,5 @@ if __name__ == "__main__":
         wandb.login()
         for seed in range(1):
             wandb.init(project = wandbconfigs.running_project_name, name = "run: " + str(seed))
-            runner.run_sd_img2img(wandb, seed)
+            runner.run(wandb, seed)
             wandb.finish()

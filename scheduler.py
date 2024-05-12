@@ -92,7 +92,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         # 2. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
 
-        # add guidance
+        # add guidance from vit's key enable grad for guidance
         with torch.enable_grad():
             if self.config.prediction_type == "epsilon":
                 sample_ = sample.clone().requires_grad_(True)
@@ -107,37 +107,30 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
                 # obtain image space prediction by decoding predicted x0
                 images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
                 
-                print("size of image after decoding", images.shape)
-                
                 # clamp image range
-                #torch.clamp(images, min = 0.0, max = 1.0)
+                torch.clamp(images, min = 0.0, max = 1.0)
             
                 vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-                print("vit input size", vit_input.shape)
+
                 
                 latent_vit_features = vit(configs.layer_idx[0], vit_input, output_attentions=False)
                 
                 #debugger.log({"latent vit feature" : latent_vit_features})
-
-                #indices = torch.tensor(configs.current_selected_heads).cuda()
-                #selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices).requires_grad_(True)        
                 
+                # select which head we want to use as guidance
+                indices = torch.tensor(configs.current_selected_heads).cuda()
+                selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices)   
+                selected_latent_vit_features = torch.index_select(latent_vit_features, 1, indices)
 
                 # MSE between latent vit features and clean image features as guidance
-                print("latent vit features", latent_vit_features.shape)
-                print("original vit features", all_original_vit_features.shape)
-                curr_loss = loss(latent_vit_features, all_original_vit_features)
+                curr_loss = loss(selected_latent_vit_features, selected_original_vit_features)
                 #debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
 
-                #sample_.data = sample_.data.to(curr_loss.dtype)
                 # calculate gradient
                 gradient = torch.autograd.grad(curr_loss, [sample_])[0]
                 #debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
-                # calculate actual guidance and add to xt
-                #actual_guidance = torch.tensor(0.0).cuda()
-                #timestep <= guidance_range_max:
-                actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
-                
+
+                actual_guidance = guidance_strength * beta_prod_t ** (0.5) * gradient
                 sample_ = sample_ - actual_guidance
                 #debugger.log({"actual guidance" : actual_guidance.detach().cpu().numpy(), "xt with guidance" : sample_.detach().cpu().numpy()})
     
@@ -253,6 +246,9 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
                 
                 #images = pred_original_sample.unsqueeze(0)
                 images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5
+
+                # clamp image range
+                torch.clamp(images, min = 0.0, max = 1.0)
                 
                 vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
             
@@ -260,16 +256,17 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
 
                 debugger.log({"latent vit feature" : latent_vit_features})
 
+                indices = torch.tensor(configs.current_selected_heads).cuda()
+                selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices)   
+                selected_latent_vit_features = torch.index_select(latent_vit_features, 1, indices)
+
                 # MSE between latent vit features and clean image features as guidance
-                curr_loss = loss(all_original_vit_features, latent_vit_features)
+                curr_loss = loss(selected_original_vit_features, selected_latent_vit_features)
 
                 #debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
-
-
                 gradient = torch.autograd.grad(curr_loss, [sample_])[0]
 
-
-                actual_guidance = guidance_strength * beta_prod_t ** 0.5 * gradient
+                actual_guidance = guidance_strength * beta_prod_t ** (0.5) * gradient
                 
                 # original code, no guidance
                 pred_epsilon = model_output - actual_guidance

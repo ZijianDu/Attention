@@ -155,7 +155,6 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
 
         super().__init__(vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler, image_encoder,
         feature_extractor, requires_aesthetics_score, force_zeros_for_empty_prompt, add_watermarker)
-        # add vit in constructore
         self.register_modules(vit=vit)
 
     # modify call function to take latent and guide with Vit
@@ -169,10 +168,12 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         guidance_strength, 
         all_original_vit_features, 
         configs,
+        image,
         debugger, 
+
+
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
-        image: PipelineImageInput = None,
         strength: float = 0.3,
         num_inference_steps: int = 50,
         timesteps: List[int] = None,
@@ -715,8 +716,30 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
 
         return StableDiffusionXLPipelineOutput(images=image)
         
-
 class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
+    def __init__(
+        self, 
+        vit, 
+        #original inputs
+        vae, 
+        text_encoder, 
+        text_encoder_2, 
+        tokenizer, 
+        tokenizer_2, 
+        unet, 
+        scheduler, 
+        image_encoder, 
+        feature_extractor, 
+        requires_aesthetics_score,
+        force_zeros_for_empty_prompt, 
+        add_watermarker = None):
+
+        super().__init__(vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler, image_encoder,
+        feature_extractor, requires_aesthetics_score, force_zeros_for_empty_prompt, add_watermarker)
+        self.register_modules(vit=vit)
+        
+    
+    @replace_example_docstring(EXAMPLE_DOC_STRING)
     @torch.no_grad()
     def __call__(
         self,

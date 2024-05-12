@@ -1,3 +1,6 @@
 [submodule "DOODL"]
 	path = DOODL
 	url = https://github.com/ZijianDu/DOODL
+[submodule "Transformer-Explainability"]
+	path = Transformer-Explainability
+	url = git@github.com:ZijianDu/Transformer-Explainability.git
