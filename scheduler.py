@@ -10,9 +10,6 @@ import numpy as np
 from dataclasses import dataclass
 from torch.nn import MSELoss
 
-def cal_entropy(p):
-    return -1.0 * torch.sum(p * torch.log(p), dim = -1)
-
 def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
     # step 1: resize
     images = F.interpolate(images, size=size, mode="bilinear", align_corners=False, antialias=True)
@@ -86,8 +83,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         current_alpha_t = alpha_prod_t / alpha_prod_t_prev
         current_beta_t = 1 - current_alpha_t
 
-        #debugger.log({"alpha_prod_t": alpha_prod_t})
-        #debugger.log({"beta_prod_t": beta_prod_t})
 
         # 2. compute predicted original sample from predicted noise also called
         # "predicted x_0" of formula (15) from https://arxiv.org/pdf/2006.11239.pdf
@@ -97,42 +92,48 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
             if self.config.prediction_type == "epsilon":
                 sample_ = sample.clone().requires_grad_(True)
                 
-                #debugger.log({"latent": sample_.detach().cpu().numpy()})
+                debugger.log({"latent image": debugger.Image(sample_.clone())})
                 loss = MSELoss()
                 
                 # pred original sample ix x0_hat
                 pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+                debugger.log({"predicted original image" : debugger.Image(pred_original_sample.clone())})
                 
                 # this is needed to calculate vit feature for guidance
                 # obtain image space prediction by decoding predicted x0
                 images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5  # [0, 1]
-                
+
                 # clamp image range
                 torch.clamp(images, min = 0.0, max = 1.0)
+                debugger.log({"decoded image from vae" : debugger.Image(images.clone())})
             
                 vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
-
+                debugger.log({"vit input image" : debugger.Image(vit_input.clone())})
                 
                 latent_vit_features = vit(configs.layer_idx[0], vit_input, output_attentions=False)
                 
-                #debugger.log({"latent vit feature" : latent_vit_features})
+                debugger.log({"latent vit feature" : latent_vit_features.clone()})
                 
                 # select which head we want to use as guidance
                 indices = torch.tensor(configs.current_selected_heads).cuda()
                 selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices)   
                 selected_latent_vit_features = torch.index_select(latent_vit_features, 1, indices)
 
+                assert selected_original_vit_features.shape[1] == len(configs.current_selected_heads)
+                assert selected_latent_vit_features.shape[1] == len(configs.current_selected_heads)
+
                 # MSE between latent vit features and clean image features as guidance
                 curr_loss = loss(selected_latent_vit_features, selected_original_vit_features)
-                #debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
+                debugger.log({"mse loss": curr_loss.clone().detach().cpu().numpy()})
 
                 # calculate gradient
                 gradient = torch.autograd.grad(curr_loss, [sample_])[0]
-                #debugger.log({"guidance":guidance.detach().cpu().numpy(), "gradient": gradient.detach().cpu().numpy()})
 
                 actual_guidance = guidance_strength * beta_prod_t ** (0.5) * gradient
+
+                # apply guidance
                 sample_ = sample_ - actual_guidance
-                #debugger.log({"actual guidance" : actual_guidance.detach().cpu().numpy(), "xt with guidance" : sample_.detach().cpu().numpy()})
+                debugger.log({"actual guidance" : actual_guidance.clone().detach().cpu().numpy(), "xt with guidance" : sample_.clone().detach().cpu().numpy()})
     
         # 3. Clip or threshold "predicted x_0"
         if self.config.thresholding:
@@ -168,8 +169,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
                 variance = (self._get_variance(t, predicted_variance=predicted_variance) ** 0.5) * variance_noise
 
         pred_prev_sample = pred_prev_sample + variance
-        debugger.log({"ddpm noise": variance.cpu().numpy()})
-        debugger.log({"xt-1 with noise": pred_prev_sample.detach().cpu().numpy()})
 
         if not return_dict:
             return (pred_prev_sample,)
@@ -240,28 +239,36 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
             if self.config.prediction_type == "epsilon":
 
                 sample_ = sample.clone().requires_grad_(True)
+                debugger.log({"latent image" : debugger.Image(sample_.clone())})
 
                 # original code
                 pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
+                debugger.log({"predicted original x0" : debugger.Image(pred_original_sample.clone())})
                 
                 #images = pred_original_sample.unsqueeze(0)
                 images = vae.decode(pred_original_sample / vae.config.scaling_factor).sample / 2 + 0.5
 
                 # clamp image range
                 torch.clamp(images, min = 0.0, max = 1.0)
-                
+                debugger.log({"decoded image from vae" : debugger.Image(images.clone())})
+
                 vit_input = _preprocess_vit_input(images, vit_input_size, vit_input_mean, vit_input_std)
+                debugger.log({"vit input image" : debugger.Image(vit_input.clone())})
             
                 latent_vit_features = vit(configs.layer_idx[0], vit_input, output_attentions=False)
 
-                debugger.log({"latent vit feature" : latent_vit_features})
+                debugger.log({"latent vit feature" : latent_vit_features.clone().detach().cpu().numpy()})
 
                 indices = torch.tensor(configs.current_selected_heads).cuda()
                 selected_original_vit_features = torch.index_select(all_original_vit_features, 1, indices)   
                 selected_latent_vit_features = torch.index_select(latent_vit_features, 1, indices)
 
+                assert selected_original_vit_features.shape[1] == len(configs.current_selected_heads)
+                assert selected_latent_vit_features.shape[1] == len(configs.current_selected_heads)
+
                 # MSE between latent vit features and clean image features as guidance
                 curr_loss = loss(selected_original_vit_features, selected_latent_vit_features)
+                debugger.log({"mse loss": curr_loss.clone().detach().cpu().numpy()})
 
                 #debugger.log({"mse loss": curr_loss.detach().cpu().numpy()})
                 gradient = torch.autograd.grad(curr_loss, [sample_])[0]
@@ -270,6 +277,7 @@ class DDIMSchedulerwithGuidance(DDIMScheduler):
                 
                 # original code, no guidance
                 pred_epsilon = model_output - actual_guidance
+                debugger.log({"actual guidance" : actual_guidance.clone().detach().cpu().numpy(), "xt with guidance" : sample_.clone().detach().cpu().numpy()})
 
         # 4. Clip or threshold "predicted x_0"
         if self.config.thresholding:

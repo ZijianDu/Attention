@@ -56,22 +56,19 @@ class runconfigs:
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
-    scheduler_type = 'ddpm'
-    pipe_type = "sd"
+    scheduler_type = 'ddim'
+    pipe_type = "sdxltxt2img"
     
     dtype = torch.float16
     
     # model parameters
-    guidance_strength = [0, 50]
+    guidance_strength = [0, 10, 20, 30, 40, 50, 200, 500]
     #, 20, 26, 28, 30, 32, 34, 36, 40]
-
-    # select the range of reverse diffusion process when guidance is actually applied
-    guidance_range = 0.7
   
     # percentage iterations to add noise before denoising, higher means more noise added
-    diffusion_strength = [0.35, 0.6]
+    diffusion_strength = [0.5]
                           #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
-    # total 24 layers
+
     layer_idx = [10]
     all_params = []
 
@@ -83,11 +80,12 @@ class runconfigs:
     num_tokens = 256
     image_size = 224
 
-    # number of total iterations, 1000 is maximum, works when the mode is "running"
-    num_steps = 200
-    # number of random sampling for sweeping
-    sweeping_run_count = 200
-    
+    # depending on pipeline, we vary number of steps
+    if pipe_type == "sd":   
+        num_steps = 200
+    else:
+        num_steps = 10
+
     imageH, imageW = 224, 224
     
     # total 12 heads
@@ -115,33 +113,40 @@ class runconfigs:
 
 @dataclass
 class wandbconfigs:
-    mode = "running"
-
-    running_project_name = "test for refactored sd"
-
-    sweeping_project_name = "test sweep"
+    mode = "sweeping"
+    running_project_name = "test run for sdxl ddpm"
+    running_run_name = "ddpm allheads layer10 large iterations"
+    
+    sweeping_project_name = "test sweep for sdxltxt2img ddim"
+    # number of random sampling for sweeping
+    sweeping_run_count = 10
 
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
     metric = {
-            'name' : 'dist_vgg',
+            'name' : 'dist_alex',
             'goal' : 'minimize'
             }
     sweep_config['metric'] = metric
-    parameters_dict =  {}
+    parameters_dict =  {
+            'guidance_strength' : {
+                'value' : 0.0 }
+            }
     sweep_config['parameters'] = parameters_dict
-    
+    """            
+    'guidance_strength' : {
+        'distribution' : 'normal',
+        'mu' : 5,
+        'sigma' : 3
+    },
+    """
+
     parameters_dict.update(
         {
-            'guidance_strength' : {
-                'distribution' : 'normal',
-                'mu' : 5,
-                'sigma' : 3
-            },
             'diffusion_strength' : {
                 'distribution' : 'normal',
-                'mu' : 0.55,
-                'sigma' : 0.03
-            },
+                'mu' : 0.70,
+                'sigma' : 0.05
+            }
         })
     
