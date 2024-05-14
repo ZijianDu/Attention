@@ -47,7 +47,8 @@ from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
 @dataclass
 class runconfigs:
     ## model related
-    prompt = "a high-quality image"
+    prompt = "a high quality image of a dog"
+
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
         
@@ -84,7 +85,7 @@ class runconfigs:
     if pipe_type == "sd":   
         num_steps = 200
     else:
-        num_steps = 10
+        num_steps = 100
 
     imageH, imageW = 224, 224
     
@@ -115,11 +116,11 @@ class runconfigs:
 class wandbconfigs:
     mode = "sweeping"
     running_project_name = "test run for sdxl ddpm"
-    running_run_name = "ddpm allheads layer10 large iterations"
+    running_run_name = "ddpm allheads layer10 100steps"
     
-    sweeping_project_name = "test sweep for sdxltxt2img ddim"
+    sweeping_project_name = "sdxltxt2img, 100steps, baseline, 100runs"
     # number of random sampling for sweeping
-    sweeping_run_count = 10
+    sweeping_run_count = 100
 
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
@@ -143,10 +144,11 @@ class wandbconfigs:
 
     parameters_dict.update(
         {
-            'diffusion_strength' : {
+            'diffusion_strength' : 
+            {
                 'distribution' : 'normal',
-                'mu' : 0.70,
-                'sigma' : 0.05
-            }
+                'mu' : 0.50,
+                'sigma' : 0.1
+            },
         })
     

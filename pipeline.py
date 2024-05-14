@@ -152,7 +152,6 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         requires_aesthetics_score,
         force_zeros_for_empty_prompt, 
         add_watermarker = None):
-
         super().__init__(vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler, image_encoder,
         feature_extractor, requires_aesthetics_score, force_zeros_for_empty_prompt, add_watermarker)
         self.register_modules(vit=vit)
@@ -169,12 +168,10 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         all_original_vit_features, 
         configs,
         image,
-        debugger, 
-
-
+        debugger,
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
-        strength: float = 0.3,
+        diffusion_strength: float = 0.3,
         num_inference_steps: int = 50,
         timesteps: List[int] = None,
         denoising_start: Optional[float] = None,
@@ -388,7 +385,7 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         self.check_inputs(
             prompt,
             prompt_2,
-            strength,
+            diffusion_strength,
             num_inference_steps,
             callback_steps,
             negative_prompt,
@@ -453,7 +450,7 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
         timesteps, num_inference_steps = retrieve_timesteps(self.scheduler, num_inference_steps, device, timesteps)
         timesteps, num_inference_steps = self.get_timesteps(
             num_inference_steps,
-            strength,
+            diffusion_strength,
             device,
             denoising_start=self.denoising_start if denoising_value_valid(self.denoising_start) else None,
         )
@@ -719,26 +716,23 @@ class StableDiffusionXLImg2ImgPipelineWithViTGuidance(StableDiffusionXLImg2ImgPi
 class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
     def __init__(
         self, 
-        vit, 
+        vit,
         #original inputs
         vae, 
-        text_encoder, 
-        text_encoder_2, 
-        tokenizer, 
+        text_encoder,
+        text_encoder_2,
+        tokenizer,
         tokenizer_2, 
         unet, 
         scheduler, 
         image_encoder, 
-        feature_extractor, 
-        requires_aesthetics_score,
+        feature_extractor,
         force_zeros_for_empty_prompt, 
         add_watermarker = None):
-
         super().__init__(vae, text_encoder, text_encoder_2, tokenizer, tokenizer_2, unet, scheduler, image_encoder,
-        feature_extractor, requires_aesthetics_score, force_zeros_for_empty_prompt, add_watermarker)
+        feature_extractor, force_zeros_for_empty_prompt, add_watermarker)
         self.register_modules(vit=vit)
-        
-    
+
     @replace_example_docstring(EXAMPLE_DOC_STRING)
     @torch.no_grad()
     def __call__(
@@ -747,13 +741,10 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
         vit_input_mean,
         vit_input_std,
         guidance_strength, 
-        all_original_vit_features, 
-        configs, 
-        image, 
-        diffusion_strength,
+        guidance_image_vit_features,  
+        configs,
         debugger,
-
-        # original function arguments
+        # original function
         prompt: Union[str, List[str]] = None,
         prompt_2: Optional[Union[str, List[str]]] = None,
         height: Optional[int] = None,
@@ -787,8 +778,7 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
         clip_skip: Optional[int] = None,
         callback_on_step_end: Optional[Callable[[int, int, Dict], None]] = None,
         callback_on_step_end_tensor_inputs: List[str] = ["latents"],
-        **kwargs,
-    ):
+        **kwargs,):
         r"""
         Function invoked when calling the pipeline for generation.
 
@@ -1140,42 +1130,42 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                 # compute the previous noisy sample x_t -> x_t-1
                 latents_dtype = latents.dtype
 
-            if configs.scheduler_type == 'ddpm':
-                latents = self.scheduler.step(vae = self.vae, 
-                                            vit = self.vit, 
-                                            debugger = debugger, 
-                                            vit_input_size = vit_input_size, 
-                                            vit_input_mean = vit_input_mean, 
-                                            vit_input_std = vit_input_std,
-                                            guidance_strength = guidance_strength,
-                                            all_original_vit_features = all_original_vit_features,
-                                            configs = configs, 
-                                            # base model input
-                                            model_output = noise_pred,  
-                                            timestep = t, 
-                                            sample = latents, 
-                                            generator = generator, 
-                                            return_dict=False)[0]
-            
-            if configs.scheduler_type == 'ddim':
-                latents = self.scheduler.step(vae = self.vae, 
-                                            vit = self.vit, 
-                                            debugger = debugger, 
-                                            vit_input_size = vit_input_size, 
-                                            vit_input_mean = vit_input_mean, 
-                                            vit_input_std = vit_input_std,
-                                            guidance_strength = guidance_strength,
-                                            all_original_vit_features = all_original_vit_features,
-                                            configs = configs, 
-                                            # base model input
-                                            model_output = noise_pred,  
-                                            timestep = t, 
-                                            sample = latents, 
-                                            eta = 0.0,
-                                            use_clipped_model_output = False,
-                                            generator = generator, 
-                                            variance_noise = None, 
-                                            return_dict=False)[0]
+                if configs.scheduler_type == 'ddpm':
+                    latents = self.scheduler.step(vae = self.vae, 
+                                                vit = self.vit, 
+                                                debugger = debugger, 
+                                                vit_input_size = vit_input_size, 
+                                                vit_input_mean = vit_input_mean, 
+                                                vit_input_std = vit_input_std,
+                                                guidance_strength = guidance_strength,
+                                                all_original_vit_features = guidance_image_vit_features,
+                                                configs = configs, 
+                                                # base model input
+                                                model_output = noise_pred,  
+                                                timestep = t, 
+                                                sample = latents, 
+                                                generator = generator, 
+                                                return_dict=False)[0]
+                
+                if configs.scheduler_type == 'ddim':
+                    latents = self.scheduler.step(vae = self.vae, 
+                                                vit = self.vit, 
+                                                debugger = debugger, 
+                                                vit_input_size = vit_input_size, 
+                                                vit_input_mean = vit_input_mean, 
+                                                vit_input_std = vit_input_std,
+                                                guidance_strength = guidance_strength,
+                                                all_original_vit_features = guidance_image_vit_features,
+                                                configs = configs, 
+                                                # base model input
+                                                model_output = noise_pred,  
+                                                timestep = t, 
+                                                sample = latents, 
+                                                eta = 0.0,
+                                                use_clipped_model_output = False,
+                                                generator = generator, 
+                                                variance_noise = None, 
+                                                return_dict=False)[0]
                 
 
                 if latents.dtype != latents_dtype:
