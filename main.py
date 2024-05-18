@@ -146,6 +146,7 @@ class runner:
                                 return_dict = False)
                     
                 if self.runconfigs.pipe_type == "sdxltxt2img":
+                    #sdxltxt2img does not have diffusion strength parameter
                     output = pipe(vit_input_size = self.runconfigs.size,
                                 vit_input_mean = self.runconfigs.mean,
                                 vit_input_std = self.runconfigs.std,
@@ -183,7 +184,7 @@ class runner:
                 loss_fn_alex, loss_fn_vgg = lpips.LPIPS(net = 'alex'), lpips.LPIPS(net = 'vgg')
                 dist_alex, dist_vgg = loss_fn_alex(lpips_normed_predicted_img, lpips_normed_original_img), loss_fn_vgg(lpips_normed_predicted_img, lpips_normed_original_img)
                 wandb.log({"dist_alex" : dist_alex.detach().numpy(), "dist_vgg" : dist_vgg.detach().numpy()})
-                wandb.log({"predicted image" : wandb.Image(img_predicted)})
+                wandb.log({"final image" : wandb.Image(img_predicted)})
 
     # function to run sweeping using configs defined by wandb.config dict
     def run_sweeping(self, config = None):
@@ -266,7 +267,7 @@ if __name__ == "__main__":
     # perform normal run given preselected parameters
     if wandbconfigs.mode == "running":  
         wandb.login()
-        for seed in range(100):
-            wandb.init(project = runconfigs.running_project_name, name = runconfigs.running_run_name)
+        for seed in range(1):
+            wandb.init(project = wandbconfigs.running_project_name, name = wandbconfigs.running_run_name)
             runner.run(wandb, seed)
             wandb.finish()

@@ -47,8 +47,7 @@ from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
 @dataclass
 class runconfigs:
     ## model related
-    prompt = "a high quality image of a dog"
-
+    prompt = "a high quality image a dog"
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
         
@@ -57,20 +56,20 @@ class runconfigs:
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
-    scheduler_type = 'ddim'
+    scheduler_type = 'ddpm'
     pipe_type = "sdxltxt2img"
     
     dtype = torch.float16
     
     # model parameters
-    guidance_strength = [0, 10, 20, 30, 40, 50, 200, 500]
+    guidance_strength = [0, 10, 20, 50, 100, 300]
     #, 20, 26, 28, 30, 32, 34, 36, 40]
   
     # percentage iterations to add noise before denoising, higher means more noise added
     diffusion_strength = [0.5]
                           #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
 
-    layer_idx = [10]
+    layer_idx = [0]
     all_params = []
 
     for s in diffusion_strength:
@@ -85,7 +84,7 @@ class runconfigs:
     if pipe_type == "sd":   
         num_steps = 200
     else:
-        num_steps = 100
+        num_steps = 200
 
     imageH, imageW = 224, 224
     
@@ -114,13 +113,13 @@ class runconfigs:
 
 @dataclass
 class wandbconfigs:
-    mode = "sweeping"
-    running_project_name = "test run for sdxl ddpm"
-    running_run_name = "ddpm allheads layer10 100steps"
+    mode = "running"
+    running_project_name = "sdxltxt2img"
+    running_run_name = "ddim: test guidance influence"
     
-    sweeping_project_name = "sdxltxt2img, 100steps, baseline, 100runs"
+    sweeping_project_name = "sdxltxt2img with guidance"
     # number of random sampling for sweeping
-    sweeping_run_count = 100
+    sweeping_run_count = 50
 
     #wandb configs for sweepinng parameters
     sweep_config = {'method':'random'}
@@ -130,20 +129,18 @@ class wandbconfigs:
             }
     sweep_config['metric'] = metric
     parameters_dict =  {
-            'guidance_strength' : {
-                'value' : 0.0 }
-            }
+}
     sweep_config['parameters'] = parameters_dict
-    """            
-    'guidance_strength' : {
-        'distribution' : 'normal',
-        'mu' : 5,
-        'sigma' : 3
-    },
-    """
+
 
     parameters_dict.update(
         {
+            'guidance_strength' : {
+            'distribution' : 'normal',
+            'mu' : 50,
+            'sigma' : 20
+            },
+            
             'diffusion_strength' : 
             {
                 'distribution' : 'normal',
