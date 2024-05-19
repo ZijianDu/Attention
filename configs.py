@@ -47,7 +47,7 @@ from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
 @dataclass
 class runconfigs:
     ## model related
-    prompt = "a high quality image a dog"
+    prompt = "a high quality image a cat"
     model_path = 'facebook/dinov2-base'
     link = "stabilityai/sdxl-turbo"
         
@@ -56,20 +56,20 @@ class runconfigs:
     mean, std = processor.image_mean, processor.image_std
     mean, std = torch.tensor(mean, device="cuda"), torch.tensor(std, device="cuda")
     
-    scheduler_type = 'ddpm'
+    scheduler_type = 'euler'
     pipe_type = "sdxltxt2img"
     
     dtype = torch.float16
     
     # model parameters
-    guidance_strength = [0, 10, 20, 50, 100, 300]
+    guidance_strength = [500]
     #, 20, 26, 28, 30, 32, 34, 36, 40]
   
     # percentage iterations to add noise before denoising, higher means more noise added
     diffusion_strength = [0.5]
                           #, 0.29, 0.30, 0.31, 0.32, 0.33, 0.34]
 
-    layer_idx = [0]
+    layer_idx = [10]
     all_params = []
 
     for s in diffusion_strength:
@@ -84,7 +84,7 @@ class runconfigs:
     if pipe_type == "sd":   
         num_steps = 200
     else:
-        num_steps = 200
+        num_steps = 400
 
     imageH, imageW = 224, 224
     
@@ -115,7 +115,7 @@ class runconfigs:
 class wandbconfigs:
     mode = "running"
     running_project_name = "sdxltxt2img"
-    running_run_name = "ddim: test guidance influence"
+    running_run_name = "eluer : guidance on epsilon"
     
     sweeping_project_name = "sdxltxt2img with guidance"
     # number of random sampling for sweeping

@@ -1166,6 +1166,23 @@ class StableDiffusionXLPipelineWithViTGuidance(StableDiffusionXLPipeline):
                                                 generator = generator, 
                                                 variance_noise = None, 
                                                 return_dict=False)[0]
+                    
+                if configs.scheduler_type == 'euler':
+                    latents = self.scheduler.step(vae = self.vae, 
+                                                vit = self.vit,
+                                                debugger = debugger,
+                                                vit_input_size = vit_input_size, 
+                                                vit_input_mean = vit_input_mean, 
+                                                vit_input_std = vit_input_std,
+                                                guidance_strength = guidance_strength,
+                                                all_original_vit_features = guidance_image_vit_features,
+                                                configs = configs, 
+                                                # originial inputs
+                                                model_output = noise_pred,
+                                                timestep = t,
+                                                sample = latents, 
+                                                generator = None,
+                                                return_dict = False)[0]
                 
 
                 if latents.dtype != latents_dtype:

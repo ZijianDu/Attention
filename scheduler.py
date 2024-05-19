@@ -1,4 +1,4 @@
-from diffusers import DDIMScheduler, DDPMScheduler
+from diffusers import DDIMScheduler, DDPMScheduler, EulerAncestralDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
 import torch
 import torch.nn.functional as F
@@ -9,6 +9,8 @@ from torch.distributions import Categorical
 import numpy as np
 from dataclasses import dataclass
 from torch.nn import MSELoss
+from diffusers.utils import logging
+logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Tensor, std: torch.Tensor):
     # step 1: resize
@@ -17,7 +19,125 @@ def _preprocess_vit_input(images: torch.Tensor, size: list[int], mean: torch.Ten
     normalized  = (images - torch.mean(images)) / torch.std(images)
     return normalized
 
-## modified DDPM scheduler with guidance from ViT
+# modified euler ancestral scheduler with guidance
+class EulerAncestralDiscreteSchedulerwithGuidance(EulerAncestralDiscreteScheduler):
+    def step(
+        self,
+        vae, 
+        vit,
+        debugger,
+        vit_input_size,
+        vit_input_mean, 
+        vit_input_std,
+        guidance_strength,
+        all_original_vit_features,
+        configs, 
+        # originial inputs
+        model_output: torch.FloatTensor,
+        timestep: Union[float, torch.FloatTensor],
+        sample: torch.FloatTensor,
+        generator: Optional[torch.Generator] = None,
+        return_dict: bool = True,
+        ):
+        """
+        Predict the sample from the previous timestep by reversing the SDE. This function propagates the diffusion
+        process from the learned model outputs (most often the predicted noise).
+
+        Args:
+            model_output (`torch.FloatTensor`):
+                The direct output from learned diffusion model.
+            timestep (`float`):
+                The current discrete timestep in the diffusion chain.
+            sample (`torch.FloatTensor`):
+                A current instance of a sample created by the diffusion process.
+            generator (`torch.Generator`, *optional*):
+                A random number generator.
+            return_dict (`bool`):
+                Whether or not to return a
+                [`~schedulers.scheduling_euler_ancestral_discrete.EulerAncestralDiscreteSchedulerOutput`] or tuple.
+
+        Returns:
+            [`~schedulers.scheduling_euler_ancestral_discrete.EulerAncestralDiscreteSchedulerOutput`] or `tuple`:
+                If return_dict is `True`,
+                [`~schedulers.scheduling_euler_ancestral_discrete.EulerAncestralDiscreteSchedulerOutput`] is returned,
+                otherwise a tuple is returned where the first element is the sample tensor.
+
+        """
+
+        if (
+            isinstance(timestep, int)
+            or isinstance(timestep, torch.IntTensor)
+            or isinstance(timestep, torch.LongTensor)
+        ):
+            raise ValueError(
+                (
+                    "Passing integer indices (e.g. from `enumerate(timesteps)`) as timesteps to"
+                    " `EulerDiscreteScheduler.step()` is not supported. Make sure to pass"
+                    " one of the `scheduler.timesteps` as a timestep."
+                ),
+            )
+
+        if not self.is_scale_input_called:
+            logger.warning(
+                "The `scale_model_input` function should be called before `step` to ensure correct denoising. "
+                "See `StableDiffusionPipeline` for a usage example."
+            )
+
+        if self.step_index is None:
+            self._init_step_index(timestep)
+
+        sigma = self.sigmas[self.step_index]
+
+        # Upcast to avoid precision issues when computing prev_sample
+        sample = sample.to(torch.float32)
+        loss = MSELoss()
+
+        # 1. compute predicted original sample (x_0) from sigma-scaled predicted noise
+        if self.config.prediction_type == "epsilon":
+            pred_original_sample = sample - sigma * model_output
+
+
+        elif self.config.prediction_type == "v_prediction":
+            # * c_out + input * c_skip
+            pred_original_sample = model_output * (-sigma / (sigma**2 + 1) ** 0.5) + (sample / (sigma**2 + 1))
+        elif self.config.prediction_type == "sample":
+            raise NotImplementedError("prediction_type not implemented yet: sample")
+        else:
+            raise ValueError(
+                f"prediction_type given as {self.config.prediction_type} must be one of `epsilon`, or `v_prediction`"
+            )
+
+        sigma_from = self.sigmas[self.step_index]
+        sigma_to = self.sigmas[self.step_index + 1]
+        sigma_up = (sigma_to**2 * (sigma_from**2 - sigma_to**2) / sigma_from**2) ** 0.5
+        sigma_down = (sigma_to**2 - sigma_up**2) ** 0.5
+
+        # 2. Convert to an ODE derivative
+        derivative = (sample - pred_original_sample) / sigma
+
+        dt = sigma_down - sigma
+
+        prev_sample = sample + derivative * dt
+
+        device = model_output.device
+        noise = randn_tensor(model_output.shape, dtype=model_output.dtype, device=device, generator=generator)
+
+        prev_sample = prev_sample + noise * sigma_up
+
+        # Cast sample back to model compatible dtype
+        prev_sample = prev_sample.to(model_output.dtype)
+
+        # upon completion increase step index by one
+        self._step_index += 1
+
+        if not return_dict:
+            return (prev_sample,)
+
+        return EulerAncestralDiscreteSchedulerOutput(
+            prev_sample=prev_sample, pred_original_sample=pred_original_sample
+        )
+
+# modified ddpm scheduler with guidance
 class DDPMSchedulerwithGuidance(DDPMScheduler):
     # modify step function s.t each predicted x0 is guided by Vit feature
     def step(
@@ -31,7 +151,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         guidance_strength,
         all_original_vit_features,
         configs, 
-
         #base model inputs
         model_output: torch.FloatTensor,
         timestep: int,
@@ -92,7 +211,6 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
         with torch.enable_grad():
             if self.config.prediction_type == "epsilon":
                 sample_ = sample.clone().requires_grad_(True)
-                
                 debugger.log({"xt": debugger.Image(sample_.clone())})
 
                 # pred original sample, original code
@@ -130,14 +248,13 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
                 actual_guidance = guidance_strength * beta_prod_t ** (0.5) * gradient
 
-                # according to adm, guidance is applied on epislon
-                model_output = model_output - actual_guidance
+                # 1. add guidance to epsilon and update x0 with the guided epsilon, does not work for some reason rn
+                #pred_original_sample = (sample_ - beta_prod_t ** (0.5) * (model_output - actual_guidance)) / alpha_prod_t ** (0.5)
+                #debugger.log({"x0 with guidance" : debugger.Image(pred_original_sample.clone())})
 
-                # use updated epislon to predict original sample
-                pred_original_sample = (sample_ - beta_prod_t ** (0.5) * model_output) / alpha_prod_t ** (0.5)
-                
-                debugger.log({"x0 with guidance" : debugger.Image(pred_original_sample.clone())})
-                #debugger.log({"actual guidance" : actual_guidance.clone().detach().cpu().numpy()})
+                # 2. add guidance to the sample
+                sample_ = sample_ - actual_guidance
+                debugger.log({"xt with guidance" : debugger.Image(sample_.clone())})
     
         # 3. Clip or threshold "predicted x_0"
         if self.config.thresholding:
@@ -179,7 +296,7 @@ class DDPMSchedulerwithGuidance(DDPMScheduler):
 
         return DDPMSchedulerOutput(prev_sample=pred_prev_sample, pred_original_sample=pred_original_sample)
 
-
+# modified ddim scheduler with guidance
 class DDIMSchedulerwithGuidance(DDIMScheduler):
     def step(self, 
              vae,

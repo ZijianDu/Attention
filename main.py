@@ -16,7 +16,7 @@ from diffusers.loaders import FromSingleFileMixin, IPAdapterMixin, LoraLoaderMix
 from diffusers.models import AutoencoderKL, ImageProjection, UNet2DConditionModel
 from diffusers.models.lora import adjust_lora_scale_text_encoder
 from diffusers.schedulers import KarrasDiffusionSchedulers, DDPMScheduler
-from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance
+from scheduler import DDPMSchedulerwithGuidance, DDIMSchedulerwithGuidance, EulerAncestralDiscreteSchedulerwithGuidance
 from diffusers import (StableDiffusionPipeline, StableDiffusionXLPipeline, StableDiffusionImg2ImgPipeline)
 from diffusers.pipelines.stable_diffusion.pipeline_stable_diffusion import retrieve_timesteps
 from diffusers.pipelines.stable_diffusion.pipeline_output import StableDiffusionPipelineOutput
@@ -98,6 +98,9 @@ class runner:
                 scheduler = DDPMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler", torch_dtype = torch.float16)
             if self.runconfigs.scheduler_type == "ddim":
                 scheduler = DDIMSchedulerwithGuidance.from_pretrained(link, subfolder="scheduler", torch_dtype = torch.float16)
+            if self.runconfigs.scheduler_type == "euler":
+                scheduler = EulerAncestralDiscreteSchedulerwithGuidance.from_pretrained(link, subfolder = "scheduler", torch_type = torch.float16)
+            
             unet = UNet2DConditionModel.from_pretrained(link, subfolder="unet", torch_dtype = torch.float16).to(device="cuda")
             
             if self.runconfigs.pipe_type == "sdxltxt2img":  
